@@ -31,6 +31,9 @@
             nativeBuildInputs = [ pkgs.makeWrapper ];
 
             postInstall = ''
+              install -Dm644 data/comin-tray.desktop \
+                $out/share/applications/comin-tray.desktop
+
               wrapProgram $out/bin/comin-tray \
                 --prefix PATH : ${nixpkgs.lib.makeBinPath [ cominPackage ]}
             '';
