@@ -1,20 +1,36 @@
 mod comin;
+mod log_viewer;
 mod logs;
 mod model;
 mod notifications;
 mod tray;
 
-use std::time::Duration;
+use std::{
+    sync::{Arc, atomic::AtomicBool},
+    time::Duration,
+};
 
 use anyhow::Result;
 use comin::CominClient;
 use ksni::TrayMethods;
 use model::{Phase, TrayState};
-use tokio::{sync::mpsc, time::MissedTickBehavior};
+use tokio::{runtime::Builder, sync::mpsc, time::MissedTickBehavior};
 use tray::{Action, CominTray};
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
+    let runtime = Builder::new_multi_thread().enable_all().build()?;
+    let open_logs = Arc::new(AtomicBool::new(false));
+
+    runtime.block_on(start_tray(Arc::clone(&open_logs)))?;
+
+    // The log window owns the main thread from here on. The tray and its
+    // polling loop keep running on the runtime's worker threads.
+    log_viewer::run(open_logs)?;
+
+    Ok(())
+}
+
+async fn start_tray(open_logs: Arc<AtomicBool>) -> Result<()> {
     let client = CominClient::default();
     let initial_state = read_state(&client).await;
     let (action_tx, mut action_rx) = mpsc::channel(8);
@@ -24,25 +40,24 @@ async fn main() -> Result<()> {
     };
     let tray_handle = tray.spawn().await?;
 
-    let mut state = initial_state;
-    let mut refresh = tokio::time::interval(Duration::from_secs(3));
-    refresh.set_missed_tick_behavior(MissedTickBehavior::Skip);
-    refresh.tick().await;
+    tokio::spawn(async move {
+        let mut state = initial_state;
+        let mut refresh = tokio::time::interval(Duration::from_secs(3));
+        refresh.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        refresh.tick().await;
 
-    loop {
-        tokio::select! {
-            _ = refresh.tick() => {
-                update_state(&client, &tray_handle, &mut state).await;
-            }
-            Some(action) = action_rx.recv() => {
-                if matches!(action, Action::Quit) {
-                    break;
+        loop {
+            tokio::select! {
+                _ = refresh.tick() => {
+                    update_state(&client, &tray_handle, &mut state).await;
                 }
-                run_action(&client, action).await;
-                update_state(&client, &tray_handle, &mut state).await;
+                Some(action) = action_rx.recv() => {
+                    run_action(&client, action, &open_logs).await;
+                    update_state(&client, &tray_handle, &mut state).await;
+                }
             }
         }
-    }
+    });
 
     Ok(())
 }
@@ -71,14 +86,17 @@ async fn update_state(
         .await;
 }
 
-async fn run_action(client: &CominClient, action: Action) {
+async fn run_action(client: &CominClient, action: Action, open_logs: &Arc<AtomicBool>) {
     let result = match action {
         Action::Fetch => client.fetch().await,
         Action::Suspend => client.suspend().await,
         Action::Resume => client.resume().await,
         Action::SwitchLatest => client.switch_latest().await,
-        Action::OpenLogs => logs::open(),
-        Action::Quit => return,
+        Action::OpenLogs => {
+            open_logs.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        }
+        Action::Quit => std::process::exit(0),
     };
 
     if let Err(error) = result {

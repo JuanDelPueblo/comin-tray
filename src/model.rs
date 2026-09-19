@@ -82,6 +82,9 @@ impl TrayState {
         if let Some(activity) = status.activity_detail() {
             lines.push(activity);
         }
+        if let Some(reboot_reason) = status.reboot_reason() {
+            lines.push(reboot_reason.into());
+        }
 
         if let Some(repository) = status.fetcher.repository_status.as_ref() {
             let commit = short_commit(&repository.selected_commit_id);
@@ -199,9 +202,26 @@ impl CominState {
             .map(String::as_str)
             .collect();
 
-        latest.status == "done"
+        latest.operation == "boot"
+            && latest.status == "done"
             && successful.contains(latest.uuid.as_str())
             && self.store.deployment_switched != latest.uuid
+    }
+
+    pub fn reboot_reason(&self) -> Option<&'static str> {
+        if !self.need_to_reboot.unwrap_or(false) {
+            return None;
+        }
+        if self
+            .deployer
+            .deployment
+            .as_ref()
+            .is_some_and(|deployment| deployment.operation == "switch")
+        {
+            Some("The switch finished. Restart to use the new kernel.")
+        } else {
+            Some("Restart to use the latest deployment.")
+        }
     }
 
     pub fn activity_detail(&self) -> Option<String> {
@@ -407,5 +427,30 @@ mod tests {
             state.evaluation_message(),
             "Commit 12345678 from github/deploy was fetched. Evaluation started."
         );
+    }
+
+    #[test]
+    fn switched_deployment_does_not_offer_another_switch() {
+        let latest = Deployment {
+            uuid: "new".into(),
+            status: "done".into(),
+            operation: "switch".into(),
+            created_at: Some("2026-01-02T00:00:00Z".into()),
+            ..Default::default()
+        };
+        let state = CominState {
+            deployer: Deployer {
+                operation: "switch".into(),
+                ..Default::default()
+            },
+            store: Store {
+                deployments: vec![latest],
+                deployment_switched: "old".into(),
+                deployments_successful: vec!["new".into()],
+            },
+            ..Default::default()
+        };
+
+        assert!(!state.can_switch_latest());
     }
 }

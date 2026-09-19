@@ -24,7 +24,19 @@
           runtimePackages = [
             cominPackage
             pkgs.systemd
-            pkgs.xdg-terminal-exec
+          ];
+          # The log window uses winit through Iced. winit dlopens its Wayland
+          # and X11 client libraries at runtime instead of linking them, so
+          # they must be added to the binary's rpath explicitly.
+          windowLibraries = [
+            pkgs.libGL
+            pkgs.libxkbcommon
+            pkgs.wayland
+            pkgs.libx11
+            pkgs.libxcursor
+            pkgs.libxi
+            pkgs.libxcb
+            pkgs.libxrandr
           ];
         in
         {
@@ -39,9 +51,17 @@
               install -Dm644 data/comin-tray.desktop \
                 $out/share/applications/comin-tray.desktop
 
+              patchelf --add-rpath ${nixpkgs.lib.makeLibraryPath windowLibraries} \
+                $out/bin/comin-tray
+
               wrapProgram $out/bin/comin-tray \
                 --prefix PATH : ${nixpkgs.lib.makeBinPath runtimePackages}
             '';
+
+            # Skip the default rpath shrinking: it only keeps entries used to
+            # resolve DT_NEEDED symbols, but winit's window libraries above
+            # are dlopened at runtime and would otherwise be stripped back out.
+            dontPatchELF = true;
 
             meta = {
               description = "A small StatusNotifierItem tray for Comin";
