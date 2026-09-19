@@ -8,7 +8,7 @@ use std::{
 };
 
 use iced::{
-    Color, Element, Fill, Length, Size, Subscription, Task,
+    Color, Element, Fill, Length, Size, Subscription, Task, Theme,
     widget::{Column, button, column, row, scrollable, text},
     window,
 };
@@ -22,6 +22,7 @@ const LOG_STREAM_ID: &str = "comin-log-stream";
 pub fn run(open_requested: Arc<AtomicBool>) -> iced::Result {
     iced::daemon("Comin service log", LogViewer::update, LogViewer::view)
         .subscription(LogViewer::subscription)
+        .theme(|_, _| Theme::Dark)
         .run_with(move || (LogViewer::new(open_requested), Task::none()))
 }
 
@@ -142,11 +143,11 @@ impl LogViewer {
 
 fn log_row(entry: &LogEntry) -> Element<'_, Message> {
     row![
-        text(entry.timestamp.clone()).width(Length::Fixed(220.0)),
+        text(entry.timestamp.clone()).width(Length::Fixed(180.0)),
         text(entry.priority.label())
             .width(Length::Fixed(90.0))
             .color(priority_color(entry.priority)),
-        text(entry.message.clone()),
+        text(entry.message.clone()).width(Fill),
     ]
     .spacing(12)
     .into()

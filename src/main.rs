@@ -42,6 +42,7 @@ async fn start_tray(open_logs: Arc<AtomicBool>) -> Result<()> {
 
     tokio::spawn(async move {
         let mut state = initial_state;
+        let mut notified_reboot = None;
         let mut refresh = tokio::time::interval(Duration::from_secs(3));
         refresh.set_missed_tick_behavior(MissedTickBehavior::Skip);
         refresh.tick().await;
@@ -49,11 +50,11 @@ async fn start_tray(open_logs: Arc<AtomicBool>) -> Result<()> {
         loop {
             tokio::select! {
                 _ = refresh.tick() => {
-                    update_state(&client, &tray_handle, &mut state).await;
+                    update_state(&client, &tray_handle, &mut state, &mut notified_reboot).await;
                 }
                 Some(action) = action_rx.recv() => {
                     run_action(&client, action, &open_logs).await;
-                    update_state(&client, &tray_handle, &mut state).await;
+                    update_state(&client, &tray_handle, &mut state, &mut notified_reboot).await;
                 }
             }
         }
@@ -73,17 +74,46 @@ async fn update_state(
     client: &CominClient,
     tray_handle: &ksni::Handle<CominTray>,
     current: &mut TrayState,
+    notified_reboot: &mut Option<String>,
 ) {
     let next = read_state(client).await;
     if next.phase != current.phase {
         notify_phase_change(current.phase, &next).await;
     }
+    notify_reboot_once(&next, notified_reboot).await;
     *current = next.clone();
     let _ = tray_handle
         .update(move |tray| {
             tray.state = next;
         })
         .await;
+}
+
+/// Comin re-checks its remote on an interval, which briefly reports fetching
+/// or evaluating even with nothing to do. That flips `Phase` away from
+/// `RebootRequired` and back, so a plain phase-transition notification would
+/// resend every cycle. Key this one on the deployment's identity instead, so
+/// it only fires once per deployment that actually needs a restart.
+async fn notify_reboot_once(next: &TrayState, notified_reboot: &mut Option<String>) {
+    let Some(status) = &next.status else {
+        return;
+    };
+
+    if !status.need_to_reboot.unwrap_or(false) {
+        *notified_reboot = None;
+        return;
+    }
+
+    let deployment_uuid = status
+        .latest_deployment()
+        .map(|deployment| &deployment.uuid);
+    if notified_reboot.as_deref() != deployment_uuid.map(String::as_str) {
+        let message = status
+            .reboot_reason()
+            .unwrap_or("Restart the computer to use the latest deployment.");
+        let _ = notifications::send("Comin", message, Phase::RebootRequired.icon_name()).await;
+        *notified_reboot = deployment_uuid.cloned();
+    }
 }
 
 async fn run_action(client: &CominClient, action: Action, open_logs: &Arc<AtomicBool>) {
@@ -111,10 +141,6 @@ async fn notify_phase_change(previous: Phase, next: &TrayState) {
         Phase::Idle if previous == Phase::Deploying => ("Comin", "The deployment finished.".into()),
         Phase::Failed => ("Comin", "A Comin operation failed.".into()),
         Phase::Suspended => ("Comin", "Comin is suspended.".into()),
-        Phase::RebootRequired => (
-            "Comin",
-            "Restart the computer to use the latest deployment.".into(),
-        ),
         Phase::Unavailable => (
             "Comin",
             next.error
