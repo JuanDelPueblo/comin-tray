@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Comin Tray
+GenericName=System Update Status
+Comment=Show Comin deployment status in the system tray
+Exec=comin-tray
+Icon=system-software-update
+Terminal=false
+Categories=System;Monitor;
+Keywords=NixOS;Comin;Deployment;Update;
+StartupNotify=false
+X-KDE-StartupNotify=false

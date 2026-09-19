@@ -24,6 +24,7 @@ nix run github:JuanDelPueblo/comin-tray
 
 The package does not add an autostart entry.
 Start it with your preferred Plasma autostart method.
+The package installs a `Comin Tray` application launcher for this purpose.
 
 ## Design
 
