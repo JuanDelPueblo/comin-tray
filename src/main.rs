@@ -1,4 +1,5 @@
 mod comin;
+mod logs;
 mod model;
 mod notifications;
 mod tray;
@@ -60,7 +61,7 @@ async fn update_state(
 ) {
     let next = read_state(client).await;
     if next.phase != current.phase {
-        notify_phase_change(current.phase, next.phase, next.error.as_deref()).await;
+        notify_phase_change(current.phase, &next).await;
     }
     *current = next.clone();
     let _ = tray_handle
@@ -76,6 +77,7 @@ async fn run_action(client: &CominClient, action: Action) {
         Action::Suspend => client.suspend().await,
         Action::Resume => client.resume().await,
         Action::SwitchLatest => client.switch_latest().await,
+        Action::OpenLogs => logs::open(),
         Action::Quit => return,
     };
 
@@ -85,17 +87,24 @@ async fn run_action(client: &CominClient, action: Action) {
     }
 }
 
-async fn notify_phase_change(previous: Phase, next: Phase, error: Option<&str>) {
-    let message = match next {
-        Phase::Idle if previous == Phase::Deploying => Some("The deployment finished."),
-        Phase::Failed => Some("A Comin operation failed."),
-        Phase::Suspended => Some("Comin is suspended."),
-        Phase::RebootRequired => Some("Restart the computer to use the latest deployment."),
-        Phase::Unavailable => Some(error.unwrap_or("Comin is unavailable.")),
-        _ => None,
+async fn notify_phase_change(previous: Phase, next: &TrayState) {
+    let (summary, message) = match next.phase {
+        Phase::Evaluating => ("Comin update found", next.evaluation_message()),
+        Phase::Idle if previous == Phase::Deploying => ("Comin", "The deployment finished.".into()),
+        Phase::Failed => ("Comin", "A Comin operation failed.".into()),
+        Phase::Suspended => ("Comin", "Comin is suspended.".into()),
+        Phase::RebootRequired => (
+            "Comin",
+            "Restart the computer to use the latest deployment.".into(),
+        ),
+        Phase::Unavailable => (
+            "Comin",
+            next.error
+                .clone()
+                .unwrap_or_else(|| "Comin is unavailable.".into()),
+        ),
+        _ => return,
     };
 
-    if let Some(message) = message {
-        let _ = notifications::send("Comin", message, next.icon_name()).await;
-    }
+    let _ = notifications::send(summary, &message, next.phase.icon_name()).await;
 }

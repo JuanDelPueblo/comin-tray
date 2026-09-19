@@ -14,7 +14,9 @@ It does not inspect Nix store paths or run Nix activation scripts.
 - Fetches the configured remotes.
 - Suspends or resumes Comin.
 - Activates a successful boot deployment with a live switch when safe.
+- Notifies when a fetched commit starts evaluation.
 - Sends desktop notifications through D-Bus.
+- Opens the live Comin service log in the preferred terminal.
 
 ## Run
 
@@ -34,6 +36,8 @@ A parent flake can make the `comin` input follow its own Comin input.
 
 The tray polls status every three seconds.
 This small design avoids generated gRPC code and keeps Comin as the state owner.
+Comin provides phase data and start times, but it does not provide a build percentage.
+The tray shows the current phase and start time. The live log shows detailed Nix build progress.
 The live switch calls this Comin command:
 
 ```console

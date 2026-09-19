@@ -21,6 +21,11 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           cominPackage = comin.packages.${system}.default;
+          runtimePackages = [
+            cominPackage
+            pkgs.systemd
+            pkgs.xdg-terminal-exec
+          ];
         in
         {
           default = pkgs.rustPlatform.buildRustPackage {
@@ -35,7 +40,7 @@
                 $out/share/applications/comin-tray.desktop
 
               wrapProgram $out/bin/comin-tray \
-                --prefix PATH : ${nixpkgs.lib.makeBinPath [ cominPackage ]}
+                --prefix PATH : ${nixpkgs.lib.makeBinPath runtimePackages}
             '';
 
             meta = {

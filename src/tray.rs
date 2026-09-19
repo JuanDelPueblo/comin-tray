@@ -9,6 +9,7 @@ pub enum Action {
     Suspend,
     Resume,
     SwitchLatest,
+    OpenLogs,
     Quit,
 }
 
@@ -47,6 +48,14 @@ impl Tray for CominTray {
         })];
 
         if let Some(status) = &self.state.status {
+            if let Some(activity) = status.activity_detail() {
+                items.push(ksni::MenuItem::Standard(ksni::menu::StandardItem {
+                    label: activity,
+                    enabled: false,
+                    ..Default::default()
+                }));
+            }
+
             if let Some(repository) = status.fetcher.repository_status.as_ref() {
                 let commit: String = repository.selected_commit_id.chars().take(8).collect();
                 items.push(ksni::MenuItem::Standard(ksni::menu::StandardItem {
@@ -109,6 +118,12 @@ impl Tray for CominTray {
             ));
         }
 
+        items.push(ksni::MenuItem::Separator);
+        items.push(action_item(
+            "View live logs",
+            "utilities-terminal",
+            Action::OpenLogs,
+        ));
         items.push(ksni::MenuItem::Separator);
         items.push(action_item("Quit", "application-exit", Action::Quit));
         items

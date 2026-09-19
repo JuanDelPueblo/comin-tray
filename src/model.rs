@@ -79,6 +79,10 @@ impl TrayState {
         };
 
         let mut lines = Vec::new();
+        if let Some(activity) = status.activity_detail() {
+            lines.push(activity);
+        }
+
         if let Some(repository) = status.fetcher.repository_status.as_ref() {
             let commit = short_commit(&repository.selected_commit_id);
             lines.push(format!(
@@ -107,6 +111,30 @@ impl TrayState {
         }
 
         lines.join("\n")
+    }
+
+    pub fn evaluation_message(&self) -> String {
+        let generation = self
+            .status
+            .as_ref()
+            .and_then(|status| status.builder.generation.as_ref());
+
+        let Some(generation) = generation else {
+            return "A new commit was fetched. Evaluation started.".into();
+        };
+
+        let commit = short_commit(&generation.selected_commit_id);
+        let source = format!(
+            "{}/{}",
+            value_or_unknown(&generation.selected_remote_name),
+            value_or_unknown(&generation.selected_branch_name)
+        );
+
+        if commit.is_empty() {
+            format!("A new commit from {source} was fetched. Evaluation started.")
+        } else {
+            format!("Commit {commit} from {source} was fetched. Evaluation started.")
+        }
     }
 }
 
@@ -176,6 +204,33 @@ impl CominState {
             && self.store.deployment_switched != latest.uuid
     }
 
+    pub fn activity_detail(&self) -> Option<String> {
+        match self.phase() {
+            Phase::Evaluating => self
+                .builder
+                .generation
+                .as_ref()?
+                .eval_started_at
+                .as_deref()
+                .map(|time| format!("Evaluation started: {time}")),
+            Phase::Building => self
+                .builder
+                .generation
+                .as_ref()?
+                .build_started_at
+                .as_deref()
+                .map(|time| format!("Build started: {time}")),
+            Phase::Deploying => self
+                .deployer
+                .deployment
+                .as_ref()?
+                .started_at
+                .as_deref()
+                .map(|time| format!("Deployment started: {time}")),
+            _ => None,
+        }
+    }
+
     fn failed(&self) -> bool {
         let generation_failed = self.builder.generation.as_ref().is_some_and(|generation| {
             generation.eval_status == "failed" || generation.build_status == "failed"
@@ -233,6 +288,7 @@ pub struct Store {
 pub struct Deployment {
     pub uuid: String,
     pub generation: Generation,
+    pub started_at: Option<String>,
     pub ended_at: Option<String>,
     pub created_at: Option<String>,
     pub status: String,
@@ -243,8 +299,12 @@ pub struct Deployment {
 #[serde(default)]
 pub struct Generation {
     pub selected_commit_id: String,
+    pub selected_remote_name: String,
+    pub selected_branch_name: String,
     pub eval_status: String,
+    pub eval_started_at: Option<String>,
     pub build_status: String,
+    pub build_started_at: Option<String>,
 }
 
 fn short_commit(commit: &str) -> String {
@@ -324,6 +384,28 @@ mod tests {
             TrayState::from_status(state)
                 .tooltip()
                 .contains("github/deploy @ 12345678")
+        );
+    }
+
+    #[test]
+    fn evaluation_message_identifies_the_fetched_commit() {
+        let state = TrayState::from_status(CominState {
+            builder: Builder {
+                is_evaluating: Some(true),
+                generation: Some(Generation {
+                    selected_commit_id: "1234567890".into(),
+                    selected_remote_name: "github".into(),
+                    selected_branch_name: "deploy".into(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+        assert_eq!(
+            state.evaluation_message(),
+            "Commit 12345678 from github/deploy was fetched. Evaluation started."
         );
     }
 }
