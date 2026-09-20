@@ -133,6 +133,13 @@ impl LogViewer {
         } else {
             let (id, open) = window::open(window::Settings {
                 size: Size::new(900.0, 600.0),
+                platform_specific: window::settings::PlatformSpecific {
+                    // Must match data/comin-tray.desktop's basename, or KWin
+                    // can't associate the window with the app and leaves a
+                    // dangling taskbar entry behind after it closes.
+                    application_id: "comin-tray".into(),
+                    ..Default::default()
+                },
                 ..window::Settings::default()
             });
             self.window_id = Some(id);
