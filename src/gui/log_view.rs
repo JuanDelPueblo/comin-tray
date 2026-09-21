@@ -1,11 +1,18 @@
 use std::collections::VecDeque;
 
 use iced::{
-    Color, Element, Fill, Font, Length, Task,
-    widget::{Column, button, checkbox, column, row, scrollable, text},
+    Alignment, Background, Border, Color, Element, Fill, Font, Length, Task, Theme,
+    border::Radius,
+    widget::{Column, button, checkbox, column, container, row, scrollable, text},
 };
 
-use crate::logs::{LogEntry, Priority};
+use crate::{
+    gui::theme::{
+        BREEZE_BG_CARD, BREEZE_BORDER, BREEZE_DANGER, BREEZE_TEXT, BREEZE_TEXT_DIM,
+        BREEZE_TEXT_MUTED, BREEZE_WARNING, secondary_button_style,
+    },
+    logs::{LogEntry, Priority},
+};
 
 pub const MAX_ENTRIES: usize = 2000;
 
@@ -66,34 +73,51 @@ impl LogView {
         let entries = self
             .entries
             .iter()
-            .fold(Column::new().spacing(4).padding(10), |col, entry| {
+            .fold(Column::new().spacing(4).padding(12), |col, entry| {
                 col.push(log_row(entry))
             });
 
         let toolbar = row![
-            button(text("Clear logs").size(12))
+            button(text("Clear logs").size(13))
                 .on_press(LogMessage::ClearLogs)
-                .style(button::secondary)
-                .padding([4, 10]),
+                .style(secondary_button_style)
+                .padding([6, 14]),
             checkbox("Auto-scroll", self.auto_scroll)
                 .on_toggle(LogMessage::ToggleAutoScroll)
-                .size(14),
+                .size(16),
             text(format!("{} entries", self.entries.len()))
-                .size(12)
-                .color(Color::from_rgb(0.6, 0.6, 0.65)),
+                .size(13)
+                .color(BREEZE_TEXT_MUTED),
         ]
-        .spacing(14)
-        .align_y(iced::Alignment::Center)
-        .padding([8, 12]);
+        .spacing(16)
+        .align_y(Alignment::Center)
+        .padding([10, 16]);
 
-        column![
-            toolbar,
+        let log_container = container(
             scrollable(entries)
                 .id(self.scroll_id.clone())
                 .width(Fill)
                 .height(Fill),
-        ]
-        .into()
+        )
+        .width(Fill)
+        .height(Fill)
+        .padding(4)
+        .style(|_theme: &Theme| container::Style {
+            background: Some(Background::Color(BREEZE_BG_CARD)),
+            border: Border {
+                color: BREEZE_BORDER,
+                width: 1.0,
+                radius: Radius::from(6.0),
+            },
+            ..Default::default()
+        });
+
+        column![toolbar, log_container]
+            .spacing(8)
+            .padding([0, 16])
+            .width(Fill)
+            .height(Fill)
+            .into()
     }
 }
 
@@ -102,29 +126,30 @@ fn log_row(entry: &LogEntry) -> Element<'_, LogMessage> {
         text(entry.timestamp.clone())
             .size(12)
             .font(Font::MONOSPACE)
-            .width(Length::Fixed(180.0))
-            .color(Color::from_rgb(0.65, 0.65, 0.70)),
+            .width(Length::Fixed(190.0))
+            .color(BREEZE_TEXT_MUTED),
         text(entry.priority.label())
             .size(12)
-            .width(Length::Fixed(80.0))
+            .width(Length::Fixed(85.0))
             .color(priority_color(entry.priority)),
         text(entry.message.clone())
             .size(12)
             .font(Font::MONOSPACE)
+            .color(BREEZE_TEXT)
             .width(Fill),
     ]
     .spacing(10)
-    .align_y(iced::Alignment::Center)
+    .align_y(Alignment::Center)
     .into()
 }
 
 fn priority_color(priority: Priority) -> Color {
     match priority {
         Priority::Emergency | Priority::Alert | Priority::Critical | Priority::Error => {
-            Color::from_rgb(0.90, 0.30, 0.30)
+            BREEZE_DANGER
         }
-        Priority::Warning => Color::from_rgb(0.90, 0.65, 0.20),
-        Priority::Notice | Priority::Info => Color::from_rgb(0.55, 0.55, 0.60),
-        Priority::Debug => Color::from_rgb(0.40, 0.40, 0.45),
+        Priority::Warning => BREEZE_WARNING,
+        Priority::Notice | Priority::Info => BREEZE_TEXT_DIM,
+        Priority::Debug => BREEZE_TEXT_MUTED,
     }
 }

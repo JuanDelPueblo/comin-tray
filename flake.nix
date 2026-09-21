@@ -24,6 +24,7 @@
           runtimePackages = [
             cominPackage
             pkgs.systemd
+            pkgs.fontconfig
           ];
           # The log window uses winit through Iced. winit dlopens its Wayland
           # and X11 client libraries at runtime instead of linking them, so
