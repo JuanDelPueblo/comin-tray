@@ -5,10 +5,7 @@ mod model;
 mod notifications;
 mod tray;
 
-use std::{
-    sync::{Arc, atomic::AtomicBool},
-    time::Duration,
-};
+use std::time::Duration;
 
 use anyhow::Result;
 use comin::CominClient;
@@ -18,19 +15,22 @@ use tokio::{runtime::Builder, sync::mpsc, time::MissedTickBehavior};
 use tray::{Action, CominTray};
 
 fn main() -> Result<()> {
+    let mut args = std::env::args().skip(1);
+    if matches!(
+        args.next().as_deref(),
+        Some("logs" | "log-viewer" | "--logs")
+    ) {
+        log_viewer::run()?;
+        return Ok(());
+    }
+
     let runtime = Builder::new_multi_thread().enable_all().build()?;
-    let open_logs = Arc::new(AtomicBool::new(false));
-
-    runtime.block_on(start_tray(Arc::clone(&open_logs)))?;
-
-    // The log window owns the main thread from here on. The tray and its
-    // polling loop keep running on the runtime's worker threads.
-    log_viewer::run(open_logs)?;
+    runtime.block_on(run_tray())?;
 
     Ok(())
 }
 
-async fn start_tray(open_logs: Arc<AtomicBool>) -> Result<()> {
+async fn run_tray() -> Result<()> {
     let client = CominClient::default();
     let initial_state = read_state(&client).await;
     let (action_tx, mut action_rx) = mpsc::channel(8);
@@ -40,27 +40,25 @@ async fn start_tray(open_logs: Arc<AtomicBool>) -> Result<()> {
     };
     let tray_handle = tray.spawn().await?;
 
-    tokio::spawn(async move {
-        let mut state = initial_state;
-        let mut notified_reboot = None;
-        let mut refresh = tokio::time::interval(Duration::from_secs(3));
-        refresh.set_missed_tick_behavior(MissedTickBehavior::Skip);
-        refresh.tick().await;
+    let mut state = initial_state;
+    let mut notified_reboot = None;
+    let mut refresh = tokio::time::interval(Duration::from_secs(3));
+    refresh.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    refresh.tick().await;
 
-        loop {
-            tokio::select! {
-                _ = refresh.tick() => {
-                    update_state(&client, &tray_handle, &mut state, &mut notified_reboot).await;
-                }
-                Some(action) = action_rx.recv() => {
-                    run_action(&client, action, &open_logs).await;
-                    update_state(&client, &tray_handle, &mut state, &mut notified_reboot).await;
-                }
+    let mut log_viewer_child: Option<std::process::Child> = None;
+
+    loop {
+        tokio::select! {
+            _ = refresh.tick() => {
+                update_state(&client, &tray_handle, &mut state, &mut notified_reboot).await;
+            }
+            Some(action) = action_rx.recv() => {
+                run_action(&client, action, &mut log_viewer_child).await;
+                update_state(&client, &tray_handle, &mut state, &mut notified_reboot).await;
             }
         }
-    });
-
-    Ok(())
+    }
 }
 
 async fn read_state(client: &CominClient) -> TrayState {
@@ -116,17 +114,41 @@ async fn notify_reboot_once(next: &TrayState, notified_reboot: &mut Option<Strin
     }
 }
 
-async fn run_action(client: &CominClient, action: Action, open_logs: &Arc<AtomicBool>) {
+async fn run_action(
+    client: &CominClient,
+    action: Action,
+    log_viewer_child: &mut Option<std::process::Child>,
+) {
     let result = match action {
         Action::Fetch => client.fetch().await,
         Action::Suspend => client.suspend().await,
         Action::Resume => client.resume().await,
         Action::SwitchLatest => client.switch_latest().await,
         Action::OpenLogs => {
-            open_logs.store(true, std::sync::atomic::Ordering::SeqCst);
-            Ok(())
+            if let Some(child) = log_viewer_child.as_mut() {
+                match child.try_wait() {
+                    Ok(None) => return,
+                    _ => *log_viewer_child = None,
+                }
+            }
+
+            match std::env::current_exe() {
+                Ok(exe) => match std::process::Command::new(exe).arg("logs").spawn() {
+                    Ok(child) => {
+                        *log_viewer_child = Some(child);
+                        Ok(())
+                    }
+                    Err(error) => Err(anyhow::anyhow!("Failed to launch log viewer: {error}")),
+                },
+                Err(error) => Err(anyhow::anyhow!("Failed to get current executable path: {error}")),
+            }
         }
-        Action::Quit => std::process::exit(0),
+        Action::Quit => {
+            if let Some(mut child) = log_viewer_child.take() {
+                let _ = child.kill();
+            }
+            std::process::exit(0);
+        }
     };
 
     if let Err(error) = result {
