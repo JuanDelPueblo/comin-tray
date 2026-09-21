@@ -1,56 +1,72 @@
-# Comin Tray
+# Comin Desktop & Tray
 
-Comin Tray is a small native tray application for Comin on Plasma.
-It uses `ksni` for the StatusNotifierItem and `zbus` for notifications.
+A native desktop frontend and system tray indicator for [Comin](https://github.com/nlewo/comin) GitOps on NixOS and KDE Plasma.
 
-The application reads the structured output from `comin status --json`.
-It uses Comin commands for all actions.
-It does not inspect Nix store paths or run Nix activation scripts.
+It combines the concise live-state model of `comin watch` with the structured lifecycle presentation and retention insights of Cockpit NixOS Manager, providing an interactive dashboard and lightweight system tray companion.
 
 ## Features
 
-- Shows idle, fetch, evaluation, build, deployment, failure, suspension, and restart states.
-- Shows the selected Git source and the latest deployment.
-- Fetches the configured remotes.
-- Suspends or resumes Comin.
-- Activates a successful boot deployment with a live switch when safe.
-- Notifies when a fetched commit starts evaluation.
-- Sends desktop notifications through D-Bus.
-- Opens a native log window with parsed live logs from the Comin service.
+- **Full Native GUI Dashboard**: Built with Iced, featuring an Overview dashboard and live streaming service logs.
+- **5-Stage Lifecycle Overview**: Tracks Git Source (`remote/branch @ commit`), Fetch, Evaluation, Build, and Deployment in a structured, glanceable layout.
+- **Detailed Component Cards**:
+  - **Fetcher**: Configured remotes, fetch timestamps, and status for `main` and `testing` branches.
+  - **Builder**: Commit ID, evaluation status/errors, build reason, derivation path, build errors, and output store path.
+  - **Deployer**: Operation (`switch`, `boot`), status, submitted operation, reasons, profile path, and error messages.
+- **Recent Deployments & Retention Table**: Lists past deployments with relative timestamps, operations, commit references, and retention badges (`switched`, `booted`, `boot entry`, `successful`).
+- **Interactive Action Bar**:
+  - Fetch now
+  - Suspend / Resume GitOps
+  - Switch live now (conditionally available when the latest deployment booted successfully, is retained, and hasn't been switched live yet)
+  - Retry deployment (conditionally available when an existing deployment can be retried)
+  - Accept confirmation (conditionally available when a build or deployment confirmer is pending)
+- **Live Streaming Logs Tab**: Streams Comin systemd journal output with logfmt/JSON parsing, severity coloring, auto-scroll toggle, and clear buffer action.
+- **Lean System Tray Daemon**: Uses `ksni` for StatusNotifierItem and `zbus` for notifications:
+  - Left click activates and raises the Comin GUI Overview.
+  - Clean right-click menu with interactive actions only (`Open Comin`, `Fetch now`, `Suspend/Resume GitOps`, `Switch live now`, `Accept confirmation`, `Retry latest deployment`, `View live logs`, `Quit`).
+  - Concise 1–2 line tooltip (`hostname · remote/branch @ short_commit` and current activity/relative start time). Never dumps commit bodies, error traces, or long store paths into desktop tooltips.
+  - Does **not** initialize GUI or windowing libraries in the persistent daemon process, preventing ghost taskbar entries in KDE Plasma / KWin.
 
-## Run
+## Usage & CLI
 
-```console
-nix run github:JuanDelPueblo/comin-tray
-```
-
-The package does not add an autostart entry.
-Start it with your preferred Plasma autostart method.
-The package installs a `Comin Tray` application launcher for this purpose.
-
-## Design
-
-Comin Tray targets the JSON contract from Comin `v0.14.0`.
-The flake packages this Comin version by default.
-A parent flake can make the `comin` input follow its own Comin input.
-
-The tray polls status every three seconds.
-This small design avoids generated gRPC code and keeps Comin as the state owner.
-Comin provides phase data and start times, but it does not provide a build percentage.
-The tray shows the current phase and start time. The log window shows detailed Nix build progress.
-The window has Clear view and Close actions.
-The live switch calls this Comin command:
+Launch the Comin GUI dashboard:
 
 ```console
-comin deployment submit-latest --operation switch
+comin-tray gui
 ```
 
-The action only appears for a successful latest deployment under a `boot` policy.
+Launch directly into the live logs tab:
+
+```console
+comin-tray gui logs
+# or using the shortcut alias:
+comin-tray logs
+```
+
+Run the persistent system tray daemon:
+
+```console
+comin-tray tray
+# or without arguments:
+comin-tray
+```
+
+Print command-line help:
+
+```console
+comin-tray --help
+```
+
+## Desktop Integration
+
+The package installs a desktop entry `data/comin-tray.desktop` (`Name=Comin`, `GenericName=Comin GitOps Manager`, `Exec=comin-tray gui`) so Comin appears in application menus and application runners (KRunner, Rofi, etc.).
 
 ## Development
 
 ```console
 nix develop
 cargo test
+cargo clippy --all-targets --all-features -- -D warnings
+cargo fmt --check
 nix flake check
+nix build
 ```

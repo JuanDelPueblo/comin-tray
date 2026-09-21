@@ -1,0 +1,25 @@
+{
+  "need_to_reboot": false,
+  "is_suspended": false,
+  "builder": {
+    "hostname": "Ed-PCL",
+    "generation": {
+      "uuid": "conf-uuid-1",
+      "selected_commit_id": "c8aaa7d6",
+      "selected_commit_msg": "test commit"
+    }
+  },
+  "deployer": {},
+  "fetcher": {},
+  "store": {},
+  "build_confirmer": {
+    "mode": "manual",
+    "submitted": "conf-uuid-1",
+    "confirmed": ""
+  },
+  "deploy_confirmer": {
+    "mode": "manual",
+    "submitted": "",
+    "confirmed": ""
+  }
+}

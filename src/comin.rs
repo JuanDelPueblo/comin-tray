@@ -5,7 +5,7 @@ use tokio::{process::Command, time::timeout};
 
 use crate::model::CominState;
 
-const COMMAND_TIMEOUT: Duration = Duration::from_secs(20);
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Debug)]
 pub struct CominClient {
@@ -36,6 +36,14 @@ impl CominClient {
 
     pub async fn resume(&self) -> Result<()> {
         self.run(["resume"]).await.map(|_| ())
+    }
+
+    pub async fn accept_confirmation(&self) -> Result<()> {
+        self.run(["confirmation", "accept"]).await.map(|_| ())
+    }
+
+    pub async fn retry_latest(&self) -> Result<()> {
+        self.run(["deployment", "submit-latest"]).await.map(|_| ())
     }
 
     pub async fn switch_latest(&self) -> Result<()> {

@@ -3,7 +3,7 @@ name = "comin-tray"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "A small StatusNotifierItem tray for Comin"
+description = "A StatusNotifierItem tray and native desktop GUI for Comin"
 repository = "https://github.com/JuanDelPueblo/comin-tray"
 
 [dependencies]
@@ -12,6 +12,6 @@ iced = { version = "0.13.1", default-features = false, features = ["tiny-skia", 
 ksni = "0.3.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-time = { version = "0.3", features = ["formatting", "macros"] }
+time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
 tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
 zbus = { version = "5", features = ["tokio"] }

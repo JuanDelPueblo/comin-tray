@@ -1,0 +1,13 @@
+{
+  "need_to_reboot": true,
+  "is_suspended": true,
+  "builder": {
+    "is_building": true,
+    "hostname": "Ed-PCL"
+  },
+  "deployer": {
+    "is_deploying": true
+  },
+  "fetcher": {},
+  "store": {}
+}

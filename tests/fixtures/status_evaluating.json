@@ -1,0 +1,27 @@
+{
+  "need_to_reboot": true,
+  "is_suspended": false,
+  "builder": {
+    "is_evaluating": true,
+    "is_building": false,
+    "hostname": "Ed-PCL",
+    "generation": {
+      "selected_commit_id": "c8aaa7d6f168fc8ac8d190a356eab6ed1a40a22b",
+      "selected_commit_msg": "Merge pull request #53\n\nBody of 53",
+      "selected_remote_name": "github",
+      "selected_branch_name": "deploy",
+      "eval_status": "evaluating",
+      "eval_started_at": "2026-09-21T22:26:45Z"
+    }
+  },
+  "deployer": {
+    "is_deploying": false,
+    "operation": "boot"
+  },
+  "fetcher": {
+    "is_fetching": false
+  },
+  "store": {
+    "deployments": []
+  }
+}
