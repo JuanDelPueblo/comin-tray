@@ -1,0 +1,25 @@
+{
+  "need_to_reboot": true,
+  "is_suspended": false,
+  "builder": {
+    "is_evaluating": false,
+    "is_building": false,
+    "hostname": "Ed-PCL",
+    "generation": {
+      "selected_commit_id": "c8aaa7d6f168fc8ac8d190a356eab6ed1a40a22b",
+      "eval_status": "failed",
+      "eval_err": "syntax error in flake.nix line 42",
+      "eval_started_at": "2026-09-21T22:26:45Z",
+      "eval_ended_at": "2026-09-21T22:27:10Z"
+    }
+  },
+  "deployer": {
+    "is_deploying": false
+  },
+  "fetcher": {
+    "is_fetching": false
+  },
+  "store": {
+    "deployments": []
+  }
+}

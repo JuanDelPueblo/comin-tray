@@ -1,5 +1,6 @@
 mod comin;
-mod log_viewer;
+mod format;
+mod gui;
 mod logs;
 mod model;
 mod notifications;
@@ -12,16 +13,46 @@ use comin::CominClient;
 use ksni::TrayMethods;
 use model::{Phase, TrayState};
 use tokio::{runtime::Builder, sync::mpsc, time::MissedTickBehavior};
-use tray::{Action, CominTray};
+use tray::{Action, CominTray, GuiPage};
 
 fn main() -> Result<()> {
-    let mut args = std::env::args().skip(1);
-    if matches!(
-        args.next().as_deref(),
-        Some("logs" | "log-viewer" | "--logs")
-    ) {
-        log_viewer::run()?;
-        return Ok(());
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let subcommand = args.first().map(String::as_str);
+
+    match subcommand {
+        Some("gui") => {
+            let page = if args.get(1).map(String::as_str) == Some("logs") {
+                GuiPage::Logs
+            } else {
+                GuiPage::Overview
+            };
+            gui::run(page)?;
+            return Ok(());
+        }
+        Some("logs" | "log-viewer" | "--logs") => {
+            gui::run(GuiPage::Logs)?;
+            return Ok(());
+        }
+        Some("--help" | "-h" | "help") => {
+            println!("Comin GitOps Manager & System Tray\n");
+            println!("Usage: comin-tray [COMMAND]\n");
+            println!("Commands:");
+            println!(
+                "  gui [logs]   Launch the native Comin GUI dashboard (default: Overview; 'logs' opens Logs tab)"
+            );
+            println!("  logs         Launch the Comin GUI directly on the Logs tab");
+            println!(
+                "  tray         Run the persistent system tray daemon (default when run without arguments)"
+            );
+            println!("  --help, -h   Print this help message");
+            return Ok(());
+        }
+        Some("tray") | None => {}
+        Some(unknown) => {
+            eprintln!("Unknown argument: {unknown}");
+            eprintln!("Usage: comin-tray [gui [logs] | logs | tray | --help]");
+            std::process::exit(1);
+        }
     }
 
     let runtime = Builder::new_multi_thread().enable_all().build()?;
@@ -41,12 +72,12 @@ async fn run_tray() -> Result<()> {
     let tray_handle = tray.spawn().await?;
 
     let mut state = initial_state;
-    let mut notified_reboot = None;
+    let mut notified_reboot: Option<String> = None;
     let mut refresh = tokio::time::interval(Duration::from_secs(3));
     refresh.set_missed_tick_behavior(MissedTickBehavior::Skip);
     refresh.tick().await;
 
-    let mut log_viewer_child: Option<std::process::Child> = None;
+    let mut gui_child: Option<std::process::Child> = None;
 
     loop {
         tokio::select! {
@@ -54,11 +85,14 @@ async fn run_tray() -> Result<()> {
                 update_state(&client, &tray_handle, &mut state, &mut notified_reboot).await;
             }
             Some(action) = action_rx.recv() => {
-                run_action(&client, action, &mut log_viewer_child).await;
+                run_action(&client, action, &mut gui_child).await;
                 update_state(&client, &tray_handle, &mut state, &mut notified_reboot).await;
             }
+            else => break,
         }
     }
+
+    Ok(())
 }
 
 async fn read_state(client: &CominClient) -> TrayState {
@@ -87,11 +121,6 @@ async fn update_state(
         .await;
 }
 
-/// Comin re-checks its remote on an interval, which briefly reports fetching
-/// or evaluating even with nothing to do. That flips `Phase` away from
-/// `RebootRequired` and back, so a plain phase-transition notification would
-/// resend every cycle. Key this one on the deployment's identity instead, so
-/// it only fires once per deployment that actually needs a restart.
 async fn notify_reboot_once(next: &TrayState, notified_reboot: &mut Option<String>) {
     let Some(status) = &next.status else {
         return;
@@ -117,34 +146,45 @@ async fn notify_reboot_once(next: &TrayState, notified_reboot: &mut Option<Strin
 async fn run_action(
     client: &CominClient,
     action: Action,
-    log_viewer_child: &mut Option<std::process::Child>,
+    gui_child: &mut Option<std::process::Child>,
 ) {
     let result = match action {
         Action::Fetch => client.fetch().await,
         Action::Suspend => client.suspend().await,
         Action::Resume => client.resume().await,
         Action::SwitchLatest => client.switch_latest().await,
-        Action::OpenLogs => {
-            if let Some(child) = log_viewer_child.as_mut() {
+        Action::RetryLatest => client.retry_latest().await,
+        Action::AcceptConfirmation => client.accept_confirmation().await,
+        Action::OpenGui(page) => {
+            if let Some(child) = gui_child.as_mut() {
                 match child.try_wait() {
                     Ok(None) => return,
-                    _ => *log_viewer_child = None,
+                    _ => *gui_child = None,
                 }
             }
 
             match std::env::current_exe() {
-                Ok(exe) => match std::process::Command::new(exe).arg("logs").spawn() {
-                    Ok(child) => {
-                        *log_viewer_child = Some(child);
-                        Ok(())
+                Ok(exe) => {
+                    let mut cmd = std::process::Command::new(exe);
+                    cmd.arg("gui");
+                    if page == GuiPage::Logs {
+                        cmd.arg("logs");
                     }
-                    Err(error) => Err(anyhow::anyhow!("Failed to launch log viewer: {error}")),
-                },
-                Err(error) => Err(anyhow::anyhow!("Failed to get current executable path: {error}")),
+                    match cmd.spawn() {
+                        Ok(child) => {
+                            *gui_child = Some(child);
+                            Ok(())
+                        }
+                        Err(error) => Err(anyhow::anyhow!("Failed to launch GUI: {error}")),
+                    }
+                }
+                Err(error) => Err(anyhow::anyhow!(
+                    "Failed to get current executable path: {error}"
+                )),
             }
         }
         Action::Quit => {
-            if let Some(mut child) = log_viewer_child.take() {
+            if let Some(mut child) = gui_child.take() {
                 let _ = child.kill();
             }
             std::process::exit(0);

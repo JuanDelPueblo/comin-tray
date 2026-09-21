@@ -3,13 +3,21 @@ use tokio::sync::mpsc;
 
 use crate::model::TrayState;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GuiPage {
+    Overview,
+    Logs,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum Action {
+    OpenGui(GuiPage),
     Fetch,
     Suspend,
     Resume,
     SwitchLatest,
-    OpenLogs,
+    AcceptConfirmation,
+    RetryLatest,
     Quit,
 }
 
@@ -40,48 +48,16 @@ impl Tray for CominTray {
         }
     }
 
+    fn activate(&mut self, _x: i32, _y: i32) {
+        let _ = self.action_tx.try_send(Action::OpenGui(GuiPage::Overview));
+    }
+
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
-        let mut items = vec![ksni::MenuItem::Standard(ksni::menu::StandardItem {
-            label: self.title(),
-            enabled: false,
-            ..Default::default()
-        })];
-
-        if let Some(status) = &self.state.status {
-            if let Some(activity) = status.activity_detail() {
-                items.push(ksni::MenuItem::Standard(ksni::menu::StandardItem {
-                    label: activity,
-                    enabled: false,
-                    ..Default::default()
-                }));
-            }
-
-            if let Some(repository) = status.fetcher.repository_status.as_ref() {
-                let commit: String = repository.selected_commit_id.chars().take(8).collect();
-                items.push(ksni::MenuItem::Standard(ksni::menu::StandardItem {
-                    label: format!(
-                        "{}/{} @ {}",
-                        repository.selected_remote_name, repository.selected_branch_name, commit
-                    ),
-                    enabled: false,
-                    ..Default::default()
-                }));
-            }
-
-            if let Some(deployment) = status.latest_deployment() {
-                items.push(ksni::MenuItem::Standard(ksni::menu::StandardItem {
-                    label: format!("Latest: {} {}", deployment.operation, deployment.status),
-                    enabled: false,
-                    ..Default::default()
-                }));
-            }
-        } else if let Some(error) = &self.state.error {
-            items.push(ksni::MenuItem::Standard(ksni::menu::StandardItem {
-                label: error.clone(),
-                enabled: false,
-                ..Default::default()
-            }));
-        }
+        let mut items = vec![action_item(
+            "Open Comin",
+            "system-software-update",
+            Action::OpenGui(GuiPage::Overview),
+        )];
 
         items.push(ksni::MenuItem::Separator);
         items.push(action_item("Fetch now", "view-refresh", Action::Fetch));
@@ -93,13 +69,13 @@ impl Tray for CominTray {
             .is_some_and(|status| status.is_suspended.unwrap_or(false))
         {
             items.push(action_item(
-                "Resume",
+                "Resume GitOps",
                 "media-playback-start",
                 Action::Resume,
             ));
         } else {
             items.push(action_item(
-                "Suspend",
+                "Suspend GitOps",
                 "media-playback-pause",
                 Action::Suspend,
             ));
@@ -112,9 +88,35 @@ impl Tray for CominTray {
             .is_some_and(|status| status.can_switch_latest())
         {
             items.push(action_item(
-                "Activate latest with switch",
+                "Activate latest live",
                 "system-software-update",
                 Action::SwitchLatest,
+            ));
+        }
+
+        if self
+            .state
+            .status
+            .as_ref()
+            .is_some_and(|status| status.confirmation_needed())
+        {
+            items.push(action_item(
+                "Accept confirmation",
+                "dialog-ok-apply",
+                Action::AcceptConfirmation,
+            ));
+        }
+
+        if self
+            .state
+            .status
+            .as_ref()
+            .is_some_and(|status| status.can_retry_deployment())
+        {
+            items.push(action_item(
+                "Retry latest deployment",
+                "view-refresh",
+                Action::RetryLatest,
             ));
         }
 
@@ -122,7 +124,7 @@ impl Tray for CominTray {
         items.push(action_item(
             "View live logs",
             "utilities-terminal",
-            Action::OpenLogs,
+            Action::OpenGui(GuiPage::Logs),
         ));
         items.push(ksni::MenuItem::Separator);
         items.push(action_item("Quit", "application-exit", Action::Quit));

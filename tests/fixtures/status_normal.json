@@ -1,0 +1,173 @@
+{
+  "need_to_reboot": true,
+  "is_suspended": false,
+  "builder": {
+    "is_evaluating": false,
+    "is_building": false,
+    "generation": {
+      "uuid": "aa5931f9-1683-45ea-a15e-92e2e23270bf",
+      "repository_path": "/var/lib/comin/repository",
+      "repository_subdir": ".",
+      "system_attr": "",
+      "hostname": "Ed-PCL",
+      "selected_remote_url": "",
+      "selected_remote_name": "github",
+      "selected_branch_name": "deploy",
+      "selected_commit_id": "c8aaa7d6f168fc8ac8d190a356eab6ed1a40a22b",
+      "selected_commit_msg": "Merge pull request #53 from JuanDelPueblo/agent/netdata-notifications\n\nfix(juno): resolve Netdata Discord alarm notification delivery",
+      "selected_branch_is_testing": false,
+      "main_commit_id": "c8aaa7d6f168fc8ac8d190a356eab6ed1a40a22b",
+      "main_remote_name": "deploy",
+      "main_branch_name": "deploy",
+      "eval_status": "evaluated",
+      "eval_started_at": "2026-09-21T22:26:45.351651487Z",
+      "eval_ended_at": "2026-09-21T22:27:10.288510194Z",
+      "eval_err": "",
+      "out_path": "/nix/store/322i7m9kdlg796a20xg8dz2zxsszr7vs-nixos-system-Ed-PCL-26.11.20260919.20b1ddd",
+      "drv_path": "/nix/store/818prd0gpggd2m7cf2hbhmrx819lzlpp-nixos-system-Ed-PCL-26.11.20260919.20b1ddd.drv",
+      "machine_id": "",
+      "build_status": "built",
+      "build_reason": "already built",
+      "build_started_at": "2026-09-21T22:27:10.288545711Z",
+      "build_ended_at": "2026-09-21T22:27:10.288547384Z",
+      "build_err": ""
+    },
+    "generation_uuid": "aa5931f9-1683-45ea-a15e-92e2e23270bf",
+    "is_suspended": false,
+    "hostname": "Ed-PCL"
+  },
+  "deployer": {
+    "is_deploying": false,
+    "deployment": {
+      "uuid": "c2483f11-e0e1-4447-81be-d58456f06e63",
+      "reason": "The generation e86810c3-ff59-4f5c-a5bd-938bd0de0613 needs to be deployed",
+      "generation": {
+        "uuid": "e86810c3-ff59-4f5c-a5bd-938bd0de0613",
+        "repository_path": "/var/lib/comin/repository",
+        "repository_subdir": ".",
+        "system_attr": "",
+        "hostname": "Ed-PCL",
+        "selected_remote_url": "",
+        "selected_remote_name": "github",
+        "selected_branch_name": "deploy",
+        "selected_commit_id": "dfa81df96de147eef2c8b48f2cb73b0e564feb4d",
+        "selected_commit_msg": "Merge pull request #52 from JuanDelPueblo/agent/hermes-opencode-go-key\n\nfeat(juno): expose the OpenCode Go key to Hermes",
+        "selected_branch_is_testing": false,
+        "main_commit_id": "dfa81df96de147eef2c8b48f2cb73b0e564feb4d",
+        "main_remote_name": "deploy",
+        "main_branch_name": "deploy",
+        "eval_status": "evaluated",
+        "eval_started_at": "2026-09-21T22:06:45.328182963Z",
+        "eval_ended_at": "2026-09-21T22:07:14.386497220Z",
+        "eval_err": "",
+        "out_path": "/nix/store/322i7m9kdlg796a20xg8dz2zxsszr7vs-nixos-system-Ed-PCL-26.11.20260919.20b1ddd",
+        "drv_path": "/nix/store/818prd0gpggd2m7cf2hbhmrx819lzlpp-nixos-system-Ed-PCL-26.11.20260919.20b1ddd.drv",
+        "machine_id": "",
+        "build_status": "built",
+        "build_reason": "already built",
+        "build_started_at": "2026-09-21T22:07:14.386533408Z",
+        "build_ended_at": "2026-09-21T22:07:14.386536153Z",
+        "build_err": ""
+      },
+      "started_at": "2026-09-21T22:07:14.390990302Z",
+      "ended_at": "2026-09-21T22:07:14.727467572Z",
+      "error_msg": "",
+      "restart_comin": false,
+      "profile_path": "/nix/var/nix/profiles/system-profiles/comin-6-link",
+      "status": "done",
+      "operation_submitted": "boot",
+      "operation": "boot",
+      "operation_reason": "",
+      "created_at": "2026-09-21T22:07:14.387205624Z"
+    },
+    "generation_to_deploy": null,
+    "operation": "boot",
+    "is_suspended": false
+  },
+  "fetcher": {
+    "is_fetching": false,
+    "repository_status": {
+      "selected_commit_id": "c8aaa7d6f168fc8ac8d190a356eab6ed1a40a22b",
+      "selected_commit_msg": "Merge pull request #53 from JuanDelPueblo/agent/netdata-notifications\n\nfix(juno): resolve Netdata Discord alarm notification delivery",
+      "selected_remote_name": "github",
+      "selected_branch_name": "deploy",
+      "selected_branch_is_testing": false,
+      "remotes": [
+        {
+          "name": "github",
+          "url": "https://github.com/JuanDelPueblo/nix-config.git",
+          "fetch_error_msg": "",
+          "main": {
+            "name": "deploy",
+            "commit_id": "c8aaa7d6f168fc8ac8d190a356eab6ed1a40a22b",
+            "commit_msg": "Merge pull request #53 from JuanDelPueblo/agent/netdata-notifications\n\nfix(juno): resolve Netdata Discord alarm notification delivery",
+            "error_msg": "",
+            "on_top_of": "c8aaa7d6f168fc8ac8d190a356eab6ed1a40a22b"
+          },
+          "testing": {
+            "name": "testing-Ed-PCL",
+            "commit_id": "",
+            "commit_msg": "",
+            "error_msg": "the branch 'github/testing-Ed-PCL' doesn't exist",
+            "on_top_of": ""
+          },
+          "fetched_at": "2026-09-21T22:59:45.342212536Z",
+          "fetched": true
+        }
+      ],
+      "error_msg": ""
+    }
+  },
+  "store": {
+    "deployments": [
+      {
+        "uuid": "c2483f11-e0e1-4447-81be-d58456f06e63",
+        "reason": "The generation e86810c3-ff59-4f5c-a5bd-938bd0de0613 needs to be deployed",
+        "generation": {
+          "uuid": "e86810c3-ff59-4f5c-a5bd-938bd0de0613",
+          "selected_remote_name": "github",
+          "selected_branch_name": "deploy",
+          "selected_commit_id": "dfa81df96de147eef2c8b48f2cb73b0e564feb4d",
+          "selected_commit_msg": "Merge pull request #52 from JuanDelPueblo/agent/hermes-opencode-go-key\n\nfeat(juno): expose the OpenCode Go key to Hermes",
+          "eval_status": "evaluated",
+          "eval_started_at": "2026-09-21T22:06:45.328182963Z",
+          "eval_ended_at": "2026-09-21T22:07:14.386497220Z",
+          "eval_err": "",
+          "out_path": "/nix/store/322i7m9kdlg796a20xg8dz2zxsszr7vs-nixos-system-Ed-PCL-26.11.20260919.20b1ddd",
+          "drv_path": "/nix/store/818prd0gpggd2m7cf2hbhmrx819lzlpp-nixos-system-Ed-PCL-26.11.20260919.20b1ddd.drv",
+          "build_status": "built",
+          "build_reason": "already built",
+          "build_started_at": "2026-09-21T22:07:14.386533408Z",
+          "build_ended_at": "2026-09-21T22:07:14.386536153Z",
+          "build_err": ""
+        },
+        "started_at": "2026-09-21T22:07:14.390990302Z",
+        "ended_at": "2026-09-21T22:07:14.727467572Z",
+        "error_msg": "",
+        "profile_path": "/nix/var/nix/profiles/system-profiles/comin-6-link",
+        "status": "done",
+        "operation_submitted": "boot",
+        "operation": "boot",
+        "created_at": "2026-09-21T22:07:14.387205624Z"
+      }
+    ],
+    "deployment_switched": "276eb1e1-d39e-407e-862a-d7ae348fe0e8",
+    "deployment_booted": "276eb1e1-d39e-407e-862a-d7ae348fe0e8",
+    "deployments_boot_entry": [
+      "c2483f11-e0e1-4447-81be-d58456f06e63"
+    ],
+    "deployments_successful": [
+      "c2483f11-e0e1-4447-81be-d58456f06e63"
+    ]
+  },
+  "build_confirmer": {
+    "mode": "2",
+    "submitted": "",
+    "confirmed": ""
+  },
+  "deploy_confirmer": {
+    "mode": "2",
+    "submitted": "",
+    "confirmed": ""
+  }
+}
