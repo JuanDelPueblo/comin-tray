@@ -1,13 +1,19 @@
 use iced::{
-    Alignment, Color, Element, Fill, Font, Length,
+    Alignment, Background, Border, Color, Element, Fill, Font, Length, Theme,
+    border::Radius,
     widget::{Column, Row, button, column, container, horizontal_space, row, scrollable, text},
 };
 
 use crate::{
     format::{commit_title, format_relative_time_now, short_commit, short_store_path},
-    gui::widgets::{
-        COLOR_AMBER, COLOR_BLUE, COLOR_GRAY, COLOR_PURPLE, COLOR_RED, COLOR_TEAL, badge, banner,
-        card, status_chip,
+    gui::{
+        theme::{
+            BREEZE_ACCENT, BREEZE_BG_CARD, BREEZE_BG_HEADER, BREEZE_BG_ROW_ALT, BREEZE_BORDER,
+            BREEZE_BORDER_SUBTLE, BREEZE_DANGER, BREEZE_PURPLE, BREEZE_TEAL, BREEZE_TEXT,
+            BREEZE_TEXT_DIM, BREEZE_TEXT_MUTED, BREEZE_WARNING, primary_button_style,
+            secondary_button_style, success_button_style,
+        },
+        widgets::{BannerKind, badge, banner, card, card_with_height, status_chip},
     },
     model::{CominState, Deployment, Phase, Store},
 };
@@ -29,7 +35,7 @@ pub fn view<'a>(
     action_error: Option<&'a str>,
     busy_action: Option<&'a str>,
 ) -> Element<'a, OverviewMessage> {
-    let mut content = Column::new().spacing(16).padding(16).width(Fill);
+    let mut content = Column::new().spacing(16).padding(20).width(Fill);
 
     // 1. Header (Hostname + Overall Badges + Refresh)
     content = content.push(header_section(state, busy_action.is_some()));
@@ -38,8 +44,7 @@ pub fn view<'a>(
     if let Some(err) = error {
         content = content.push(banner(
             format!("Connection error: {err}"),
-            Color::from_rgba(COLOR_RED.r, COLOR_RED.g, COLOR_RED.b, 0.25),
-            COLOR_RED,
+            BannerKind::Error,
             Some(("Retry", OverviewMessage::Refresh)),
         ));
     }
@@ -47,8 +52,7 @@ pub fn view<'a>(
     if let Some(action_err) = action_error {
         content = content.push(banner(
             format!("Action failed: {action_err}"),
-            Color::from_rgba(COLOR_RED.r, COLOR_RED.g, COLOR_RED.b, 0.25),
-            COLOR_RED,
+            BannerKind::Error,
             None,
         ));
     }
@@ -57,8 +61,7 @@ pub fn view<'a>(
         if s.confirmation_needed() {
             content = content.push(banner(
                 "Confirmation required: A generation is waiting for deployment approval.",
-                Color::from_rgba(COLOR_AMBER.r, COLOR_AMBER.g, COLOR_AMBER.b, 0.25),
-                COLOR_AMBER,
+                BannerKind::Warning,
                 Some(("Accept confirmation", OverviewMessage::AcceptConfirmation)),
             ));
         }
@@ -66,8 +69,7 @@ pub fn view<'a>(
         if let Some(reason) = s.reboot_reason() {
             content = content.push(banner(
                 format!("Reboot required: {reason}"),
-                Color::from_rgba(COLOR_AMBER.r, COLOR_AMBER.g, COLOR_AMBER.b, 0.2),
-                COLOR_AMBER,
+                BannerKind::Warning,
                 None,
             ));
         }
@@ -75,8 +77,7 @@ pub fn view<'a>(
         if s.is_suspended.unwrap_or(false) {
             content = content.push(banner(
                 "GitOps is currently suspended. Automatic polling and deployments are paused.",
-                Color::from_rgba(COLOR_AMBER.r, COLOR_AMBER.g, COLOR_AMBER.b, 0.2),
-                COLOR_AMBER,
+                BannerKind::Warning,
                 Some(("Resume GitOps", OverviewMessage::Resume)),
             ));
         }
@@ -89,14 +90,29 @@ pub fn view<'a>(
         // 4. Cockpit-style Lifecycle Overview
         content = content.push(lifecycle_overview(s));
 
-        // 5. Detailed Cards: Fetcher, Builder, Deployer
+        // 5. Detailed Cards: Fetcher, Builder, Deployer in aligned grid
         content = content.push(
             row![
-                card("Fetcher", None, fetcher_card_content(s)),
-                card("Builder", None, builder_card_content(s)),
-                card("Deployer", None, deployer_card_content(s)),
+                card_with_height(
+                    "Fetcher",
+                    None,
+                    fetcher_card_content(s),
+                    Length::Fixed(240.0)
+                ),
+                card_with_height(
+                    "Builder",
+                    None,
+                    builder_card_content(s),
+                    Length::Fixed(240.0)
+                ),
+                card_with_height(
+                    "Deployer",
+                    None,
+                    deployer_card_content(s),
+                    Length::Fixed(240.0)
+                ),
             ]
-            .spacing(12)
+            .spacing(14)
             .width(Fill),
         );
 
@@ -121,7 +137,8 @@ fn header_section<'a>(
     badges = badges.push(status_chip(phase.label()));
 
     if let Some(s) = state {
-        if s.need_to_reboot.unwrap_or(false) {
+        // Avoid duplicate chip if phase is already RebootRequired
+        if s.need_to_reboot.unwrap_or(false) && phase != Phase::RebootRequired {
             badges = badges.push(status_chip("Reboot required"));
         }
         if s.confirmation_needed() {
@@ -129,21 +146,19 @@ fn header_section<'a>(
         }
     }
 
-    let refresh_button = button(text("Refresh").size(12))
+    let refresh_button = button(text("Refresh").size(13))
         .on_press_maybe(if is_busy {
             None
         } else {
             Some(OverviewMessage::Refresh)
         })
-        .style(button::secondary)
-        .padding([5, 12]);
+        .style(secondary_button_style)
+        .padding([6, 14]);
 
     row![
         column![
-            text("Comin")
-                .size(13)
-                .color(Color::from_rgb(0.65, 0.65, 0.70)),
-            row![text(hostname).size(20), badges]
+            text("Comin GitOps").size(13).color(BREEZE_TEXT_MUTED),
+            row![text(hostname).size(22).color(BREEZE_TEXT), badges]
                 .spacing(12)
                 .align_y(Alignment::Center),
         ]
@@ -166,92 +181,92 @@ fn action_bar<'a>(
     let can_retry = state.is_some_and(CominState::can_retry_deployment);
     let can_confirm = state.is_some_and(CominState::confirmation_needed);
 
-    let mut actions = Row::new().spacing(8).align_y(Alignment::Center);
+    let mut actions = Row::new().spacing(10).align_y(Alignment::Center);
 
     // Fetch now
     actions = actions.push(
-        button(text("Fetch now").size(12))
+        button(text("Fetch now").size(13))
             .on_press_maybe(if is_busy {
                 None
             } else {
                 Some(OverviewMessage::Fetch)
             })
-            .style(button::primary)
-            .padding([6, 12]),
+            .style(primary_button_style)
+            .padding([7, 14]),
     );
 
     // Suspend / Resume GitOps
     if is_suspended {
         actions = actions.push(
-            button(text("Resume GitOps").size(12))
+            button(text("Resume GitOps").size(13))
                 .on_press_maybe(if is_busy {
                     None
                 } else {
                     Some(OverviewMessage::Resume)
                 })
-                .style(button::secondary)
-                .padding([6, 12]),
+                .style(secondary_button_style)
+                .padding([7, 14]),
         );
     } else {
         actions = actions.push(
-            button(text("Suspend GitOps").size(12))
+            button(text("Suspend GitOps").size(13))
                 .on_press_maybe(if is_busy {
                     None
                 } else {
                     Some(OverviewMessage::Suspend)
                 })
-                .style(button::secondary)
-                .padding([6, 12]),
+                .style(secondary_button_style)
+                .padding([7, 14]),
         );
     }
 
     // Switch live now (conditional)
     if can_switch {
         actions = actions.push(
-            button(text("Switch live now").size(12))
+            button(text("Switch live now").size(13))
                 .on_press_maybe(if is_busy {
                     None
                 } else {
                     Some(OverviewMessage::SwitchLatest)
                 })
-                .style(button::success)
-                .padding([6, 12]),
+                .style(success_button_style)
+                .padding([7, 14]),
         );
     }
 
     // Retry deployment (conditional)
     if can_retry {
         actions = actions.push(
-            button(text("Retry deployment").size(12))
+            button(text("Retry deployment").size(13))
                 .on_press_maybe(if is_busy {
                     None
                 } else {
                     Some(OverviewMessage::RetryLatest)
                 })
-                .style(button::secondary)
-                .padding([6, 12]),
+                .style(secondary_button_style)
+                .padding([7, 14]),
         );
     }
 
     // Accept confirmation (conditional)
     if can_confirm {
         actions = actions.push(
-            button(text("Accept confirmation").size(12))
+            button(text("Accept confirmation").size(13))
                 .on_press_maybe(if is_busy {
                     None
                 } else {
                     Some(OverviewMessage::AcceptConfirmation)
                 })
-                .style(button::success)
-                .padding([6, 12]),
+                .style(success_button_style)
+                .padding([7, 14]),
         );
     }
 
     if let Some(busy) = busy_action {
         actions = actions.push(
             text(format!("Running: {busy}..."))
-                .size(12)
-                .color(COLOR_AMBER),
+                .size(13)
+                .color(BREEZE_WARNING),
         );
     }
 
@@ -259,7 +274,6 @@ fn action_bar<'a>(
 }
 
 fn lifecycle_overview<'a>(state: &'a CominState) -> Element<'a, OverviewMessage> {
-    // 5 Stages: Git source, Fetch, Evaluation, Build, Deployment
     let source_col = lifecycle_source(state);
     let fetch_col = lifecycle_fetch(state);
     let eval_col = lifecycle_eval(state);
@@ -269,10 +283,16 @@ fn lifecycle_overview<'a>(state: &'a CominState) -> Element<'a, OverviewMessage>
     card(
         "Lifecycle Overview",
         None,
-        row![source_col, fetch_col, eval_col, build_col, deploy_col]
-            .spacing(16)
-            .width(Fill)
-            .into(),
+        row![
+            container(source_col).width(Length::FillPortion(2)),
+            container(fetch_col).width(Length::FillPortion(1)),
+            container(eval_col).width(Length::FillPortion(1)),
+            container(build_col).width(Length::FillPortion(1)),
+            container(deploy_col).width(Length::FillPortion(1)),
+        ]
+        .spacing(16)
+        .width(Fill)
+        .into(),
     )
 }
 
@@ -302,23 +322,25 @@ fn lifecycle_source<'a>(state: &'a CominState) -> Element<'a, OverviewMessage> {
         .unwrap_or_default();
 
     column![
-        text("Git source").size(12).color(COLOR_GRAY),
-        text(format!("{remote}/{branch}")).size(13),
+        text("Git source").size(13).color(BREEZE_TEXT_DIM),
+        text(format!("{remote}/{branch}"))
+            .size(14)
+            .color(BREEZE_TEXT),
         if !commit_id.is_empty() {
             text(short_commit(commit_id))
-                .size(12)
+                .size(13)
                 .font(Font::MONOSPACE)
-                .color(Color::from_rgb(0.7, 0.7, 0.75))
+                .color(BREEZE_TEXT_DIM)
         } else {
-            text("—").size(12)
+            text("—").size(13).color(BREEZE_TEXT_MUTED)
         },
         if !title.is_empty() {
-            text(title).size(11).color(Color::from_rgb(0.6, 0.6, 0.65))
+            text(title).size(12).color(BREEZE_TEXT_DIM)
         } else {
             text("").size(0)
         },
     ]
-    .spacing(4)
+    .spacing(5)
     .width(Fill)
     .into()
 }
@@ -345,16 +367,16 @@ fn lifecycle_fetch<'a>(state: &'a CominState) -> Element<'a, OverviewMessage> {
         .filter(|e| !e.is_empty());
 
     let mut col = column![
-        text("Fetch").size(12).color(COLOR_GRAY),
+        text("Fetch").size(13).color(BREEZE_TEXT_DIM),
         status_chip(chip_text),
     ]
-    .spacing(4);
+    .spacing(5);
 
     if let Some(t) = time_str {
-        col = col.push(text(t).size(11).color(Color::from_rgb(0.6, 0.6, 0.65)));
+        col = col.push(text(t).size(12).color(BREEZE_TEXT_MUTED));
     }
     if let Some(err) = error_text {
-        col = col.push(text(err).size(11).color(COLOR_RED));
+        col = col.push(text(err).size(12).color(BREEZE_DANGER));
     }
 
     col.width(Fill).into()
@@ -381,16 +403,16 @@ fn lifecycle_eval<'a>(state: &'a CominState) -> Element<'a, OverviewMessage> {
         .filter(|e| !e.is_empty());
 
     let mut col = column![
-        text("Evaluation").size(12).color(COLOR_GRAY),
+        text("Evaluation").size(13).color(BREEZE_TEXT_DIM),
         status_chip(status),
     ]
-    .spacing(4);
+    .spacing(5);
 
     if let Some(t) = time_str {
-        col = col.push(text(t).size(11).color(Color::from_rgb(0.6, 0.6, 0.65)));
+        col = col.push(text(t).size(12).color(BREEZE_TEXT_MUTED));
     }
     if let Some(err) = error_text {
-        col = col.push(text(err).size(11).color(COLOR_RED));
+        col = col.push(text(err).size(12).color(BREEZE_DANGER));
     }
 
     col.width(Fill).into()
@@ -425,19 +447,19 @@ fn lifecycle_build<'a>(state: &'a CominState) -> Element<'a, OverviewMessage> {
         .filter(|e| !e.is_empty());
 
     let mut col = column![
-        text("Build").size(12).color(COLOR_GRAY),
+        text("Build").size(13).color(BREEZE_TEXT_DIM),
         status_chip(status),
     ]
-    .spacing(4);
+    .spacing(5);
 
     if let Some(t) = time_str {
-        col = col.push(text(t).size(11).color(Color::from_rgb(0.6, 0.6, 0.65)));
+        col = col.push(text(t).size(12).color(BREEZE_TEXT_MUTED));
     }
     if let Some(r) = reason {
-        col = col.push(text(r).size(11).color(Color::from_rgb(0.55, 0.55, 0.60)));
+        col = col.push(text(r).size(12).color(BREEZE_TEXT_DIM));
     }
     if let Some(err) = error_text {
-        col = col.push(text(err).size(11).color(COLOR_RED));
+        col = col.push(text(err).size(12).color(BREEZE_DANGER));
     }
 
     col.width(Fill).into()
@@ -469,23 +491,23 @@ fn lifecycle_deploy<'a>(state: &'a CominState) -> Element<'a, OverviewMessage> {
         .filter(|e| !e.is_empty());
 
     let mut col = column![
-        text("Deployment").size(12).color(COLOR_GRAY),
+        text("Deployment").size(13).color(BREEZE_TEXT_DIM),
         row![status_chip(status), status_chip(op)].spacing(6),
     ]
-    .spacing(4);
+    .spacing(5);
 
     if let Some(t) = time_str {
-        col = col.push(text(t).size(11).color(Color::from_rgb(0.6, 0.6, 0.65)));
+        col = col.push(text(t).size(12).color(BREEZE_TEXT_MUTED));
     }
     if let Some(err) = error_text {
-        col = col.push(text(err).size(11).color(COLOR_RED));
+        col = col.push(text(err).size(12).color(BREEZE_DANGER));
     }
 
     col.width(Fill).into()
 }
 
 fn fetcher_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessage> {
-    let mut col = Column::new().spacing(8);
+    let mut col = Column::new().spacing(10).width(Fill);
 
     if let Some(repo) = &state.fetcher.repository_status {
         for remote in &repo.remotes {
@@ -495,22 +517,22 @@ fn fetcher_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessag
                 .map(format_relative_time_now)
                 .unwrap_or_else(|| "unknown".into());
 
-            let mut rem_col = column![
-                row![
-                    text(format!("{} ({})", remote.name, remote.url))
-                        .size(12)
-                        .color(Color::from_rgb(0.85, 0.85, 0.90)),
-                    horizontal_space(),
-                    text(format!("fetched {fetched_ago}"))
-                        .size(11)
-                        .color(COLOR_GRAY),
-                ]
-                .align_y(Alignment::Center),
+            let remote_header = row![
+                text(&remote.name).size(14).color(BREEZE_TEXT),
+                horizontal_space(),
+                text(format!("fetched {fetched_ago}"))
+                    .size(12)
+                    .color(BREEZE_TEXT_MUTED),
             ]
-            .spacing(4);
+            .align_y(Alignment::Center)
+            .width(Fill);
+
+            let url_line = text(&remote.url).size(12).color(BREEZE_TEXT_MUTED);
+
+            let mut rem_col = column![remote_header, url_line].spacing(3).width(Fill);
 
             if let Some(err) = remote.fetch_error_msg.as_deref().filter(|s| !s.is_empty()) {
-                rem_col = rem_col.push(text(err).size(11).color(COLOR_RED));
+                rem_col = rem_col.push(text(err).size(12).color(BREEZE_DANGER));
             }
 
             if let Some(main) = &remote.main {
@@ -525,16 +547,24 @@ fn fetcher_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessag
                     .as_deref()
                     .map(commit_title)
                     .unwrap_or_default();
-                let mut line = row![text(format!("main: {name}")).size(11).color(COLOR_GRAY),];
+
+                let mut line = row![
+                    text("main:")
+                        .size(12)
+                        .color(BREEZE_TEXT_DIM)
+                        .width(Length::Fixed(55.0)),
+                    text(name).size(12).color(BREEZE_TEXT),
+                ];
                 if !commit.is_empty() {
-                    line = line.push(text(commit).size(11).font(Font::MONOSPACE));
+                    line = line.push(
+                        text(commit)
+                            .size(12)
+                            .font(Font::MONOSPACE)
+                            .color(BREEZE_TEXT_DIM),
+                    );
                 }
                 if !title.is_empty() {
-                    line = line.push(
-                        text(title)
-                            .size(11)
-                            .color(Color::from_rgb(0.65, 0.65, 0.70)),
-                    );
+                    line = line.push(text(title).size(12).color(BREEZE_TEXT_MUTED));
                 }
                 rem_col = rem_col.push(line.spacing(6));
             }
@@ -551,8 +581,13 @@ fn fetcher_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessag
                 if !err.is_empty() {
                     rem_col = rem_col.push(
                         row![
-                            text(format!("testing: {name}")).size(11).color(COLOR_GRAY),
-                            text(err).size(11).color(COLOR_GRAY),
+                            text("testing:")
+                                .size(12)
+                                .color(BREEZE_TEXT_DIM)
+                                .width(Length::Fixed(55.0)),
+                            text(format!("{name}: {err}"))
+                                .size(12)
+                                .color(BREEZE_TEXT_MUTED),
                         ]
                         .spacing(6),
                     );
@@ -564,11 +599,16 @@ fn fetcher_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessag
                         .unwrap_or_default();
                     rem_col = rem_col.push(
                         row![
-                            text(format!("testing: {name}")).size(11).color(COLOR_GRAY),
-                            text(commit).size(11).font(Font::MONOSPACE),
-                            text(title)
-                                .size(11)
-                                .color(Color::from_rgb(0.65, 0.65, 0.70)),
+                            text("testing:")
+                                .size(12)
+                                .color(BREEZE_TEXT_DIM)
+                                .width(Length::Fixed(55.0)),
+                            text(name).size(12).color(BREEZE_TEXT),
+                            text(commit)
+                                .size(12)
+                                .font(Font::MONOSPACE)
+                                .color(BREEZE_TEXT_DIM),
+                            text(title).size(12).color(BREEZE_TEXT_MUTED),
                         ]
                         .spacing(6),
                     );
@@ -580,8 +620,8 @@ fn fetcher_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessag
     } else {
         col = col.push(
             text("No repository data available")
-                .size(12)
-                .color(COLOR_GRAY),
+                .size(13)
+                .color(BREEZE_TEXT_MUTED),
         );
     }
 
@@ -589,7 +629,7 @@ fn fetcher_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessag
 }
 
 fn builder_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessage> {
-    let mut col = Column::new().spacing(8);
+    let mut col = Column::new().spacing(8).width(Fill);
 
     if let Some(generation) = &state.builder.generation {
         let commit = generation
@@ -608,14 +648,16 @@ fn builder_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessag
         col = col.push(
             row![
                 text(format!("{remote}/{branch}"))
-                    .size(12)
-                    .color(COLOR_GRAY),
-                text(commit).size(12).font(Font::MONOSPACE),
-                text(title)
-                    .size(11)
-                    .color(Color::from_rgb(0.65, 0.65, 0.70)),
+                    .size(13)
+                    .color(BREEZE_TEXT),
+                text(commit)
+                    .size(13)
+                    .font(Font::MONOSPACE)
+                    .color(BREEZE_TEXT_DIM),
+                text(title).size(12).color(BREEZE_TEXT_MUTED),
             ]
-            .spacing(6),
+            .spacing(8)
+            .align_y(Alignment::Center),
         );
 
         let eval_status = generation.eval_status.as_deref().unwrap_or("idle");
@@ -629,18 +671,18 @@ fn builder_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessag
         col = col.push(
             row![
                 text("Evaluation:")
-                    .size(12)
-                    .color(COLOR_GRAY)
-                    .width(Length::Fixed(80.0)),
+                    .size(13)
+                    .color(BREEZE_TEXT_DIM)
+                    .width(Length::Fixed(85.0)),
                 status_chip(eval_status),
-                text(eval_time).size(11).color(COLOR_GRAY),
+                text(eval_time).size(12).color(BREEZE_TEXT_MUTED),
             ]
             .spacing(8)
             .align_y(Alignment::Center),
         );
 
         if let Some(err) = generation.eval_err.as_deref().filter(|s| !s.is_empty()) {
-            col = col.push(text(err).size(11).color(COLOR_RED));
+            col = col.push(text(err).size(12).color(BREEZE_DANGER));
         }
 
         let build_status = generation.build_status.as_deref().unwrap_or("idle");
@@ -654,11 +696,11 @@ fn builder_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessag
         col = col.push(
             row![
                 text("Build:")
-                    .size(12)
-                    .color(COLOR_GRAY)
-                    .width(Length::Fixed(80.0)),
+                    .size(13)
+                    .color(BREEZE_TEXT_DIM)
+                    .width(Length::Fixed(85.0)),
                 status_chip(build_status),
-                text(build_time).size(11).color(COLOR_GRAY),
+                text(build_time).size(12).color(BREEZE_TEXT_MUTED),
             ]
             .spacing(8)
             .align_y(Alignment::Center),
@@ -668,43 +710,47 @@ fn builder_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessag
             col = col.push(
                 row![
                     text("Reason:")
-                        .size(11)
-                        .color(COLOR_GRAY)
-                        .width(Length::Fixed(80.0)),
-                    text(reason).size(11).color(Color::from_rgb(0.7, 0.7, 0.75)),
+                        .size(13)
+                        .color(BREEZE_TEXT_DIM)
+                        .width(Length::Fixed(85.0)),
+                    text(reason).size(12).color(BREEZE_TEXT_DIM),
                 ]
                 .spacing(8),
             );
         }
 
         if let Some(err) = generation.build_err.as_deref().filter(|s| !s.is_empty()) {
-            col = col.push(text(err).size(11).color(COLOR_RED));
+            col = col.push(text(err).size(12).color(BREEZE_DANGER));
         }
 
         if let Some(out) = generation.out_path.as_deref().filter(|s| !s.is_empty()) {
             col = col.push(
                 row![
                     text("Out:")
-                        .size(11)
-                        .color(COLOR_GRAY)
-                        .width(Length::Fixed(40.0)),
+                        .size(13)
+                        .color(BREEZE_TEXT_DIM)
+                        .width(Length::Fixed(85.0)),
                     text(short_store_path(out))
-                        .size(11)
+                        .size(12)
                         .font(Font::MONOSPACE)
-                        .color(Color::from_rgb(0.6, 0.6, 0.65)),
+                        .color(BREEZE_TEXT_MUTED),
                 ]
-                .spacing(6),
+                .spacing(8),
             );
         }
     } else {
-        col = col.push(text("No generation active").size(12).color(COLOR_GRAY));
+        col = col.push(
+            text("No generation active")
+                .size(13)
+                .color(BREEZE_TEXT_MUTED),
+        );
     }
 
     col.into()
 }
 
 fn deployer_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessage> {
-    let mut col = Column::new().spacing(8);
+    let mut col = Column::new().spacing(8).width(Fill);
 
     if let Some(deploy) = state.latest_deployment() {
         let op = deploy.operation.as_deref().unwrap_or("unknown");
@@ -718,12 +764,12 @@ fn deployer_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessa
         col = col.push(
             row![
                 text("Status:")
-                    .size(12)
-                    .color(COLOR_GRAY)
-                    .width(Length::Fixed(70.0)),
+                    .size(13)
+                    .color(BREEZE_TEXT_DIM)
+                    .width(Length::Fixed(85.0)),
                 status_chip(status),
                 status_chip(op),
-                text(ended).size(11).color(COLOR_GRAY),
+                text(ended).size(12).color(BREEZE_TEXT_MUTED),
             ]
             .spacing(8)
             .align_y(Alignment::Center),
@@ -733,9 +779,9 @@ fn deployer_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessa
             col = col.push(
                 row![
                     text("Submitted:")
-                        .size(11)
-                        .color(COLOR_GRAY)
-                        .width(Length::Fixed(70.0)),
+                        .size(13)
+                        .color(BREEZE_TEXT_DIM)
+                        .width(Length::Fixed(85.0)),
                     status_chip(sub),
                 ]
                 .spacing(8),
@@ -746,10 +792,10 @@ fn deployer_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessa
             col = col.push(
                 row![
                     text("Reason:")
-                        .size(11)
-                        .color(COLOR_GRAY)
-                        .width(Length::Fixed(70.0)),
-                    text(reason).size(11).color(Color::from_rgb(0.7, 0.7, 0.75)),
+                        .size(13)
+                        .color(BREEZE_TEXT_DIM)
+                        .width(Length::Fixed(85.0)),
+                    text(reason).size(12).color(BREEZE_TEXT_DIM),
                 ]
                 .spacing(8),
             );
@@ -759,23 +805,27 @@ fn deployer_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessa
             col = col.push(
                 row![
                     text("Profile:")
-                        .size(11)
-                        .color(COLOR_GRAY)
-                        .width(Length::Fixed(70.0)),
+                        .size(13)
+                        .color(BREEZE_TEXT_DIM)
+                        .width(Length::Fixed(85.0)),
                     text(profile)
-                        .size(11)
+                        .size(12)
                         .font(Font::MONOSPACE)
-                        .color(Color::from_rgb(0.6, 0.6, 0.65)),
+                        .color(BREEZE_TEXT_MUTED),
                 ]
                 .spacing(8),
             );
         }
 
         if let Some(err) = deploy.error_msg.as_deref().filter(|s| !s.is_empty()) {
-            col = col.push(text(err).size(11).color(COLOR_RED));
+            col = col.push(text(err).size(12).color(BREEZE_DANGER));
         }
     } else {
-        col = col.push(text("No deployment active").size(12).color(COLOR_GRAY));
+        col = col.push(
+            text("No deployment active")
+                .size(13)
+                .color(BREEZE_TEXT_MUTED),
+        );
     }
 
     col.into()
@@ -783,7 +833,6 @@ fn deployer_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessa
 
 fn recent_deployments_card<'a>(state: &'a CominState) -> Element<'a, OverviewMessage> {
     let mut indices: Vec<usize> = (0..state.store.deployments.len()).collect();
-    // Sort newest first
     indices.sort_by(|&a, &b| {
         let dep_a = &state.store.deployments[a];
         let dep_b = &state.store.deployments[b];
@@ -801,54 +850,78 @@ fn recent_deployments_card<'a>(state: &'a CominState) -> Element<'a, OverviewMes
     });
 
     let limit = 8;
-    let mut col = Column::new().spacing(6).width(Fill);
+    let mut col = Column::new().spacing(0).width(Fill);
 
-    // Table Header
-    col = col.push(
+    // Breeze Table Header
+    let header_row = container(
         row![
-            text("Ended")
-                .size(11)
-                .color(COLOR_GRAY)
-                .width(Length::Fixed(120.0)),
-            text("Operation")
-                .size(11)
-                .color(COLOR_GRAY)
-                .width(Length::Fixed(90.0)),
-            text("Status")
-                .size(11)
-                .color(COLOR_GRAY)
-                .width(Length::Fixed(80.0)),
-            text("Commit")
-                .size(11)
-                .color(COLOR_GRAY)
-                .width(Length::Fixed(90.0)),
-            text("Commit title").size(11).color(COLOR_GRAY).width(Fill),
-            text("Retention")
-                .size(11)
-                .color(COLOR_GRAY)
-                .width(Length::Fixed(200.0)),
+            container(text("Ended").size(12).color(BREEZE_TEXT_DIM))
+                .width(Length::Fixed(125.0))
+                .align_x(Alignment::Start),
+            container(text("Operation").size(12).color(BREEZE_TEXT_DIM))
+                .width(Length::Fixed(95.0))
+                .align_x(Alignment::Start),
+            container(text("Status").size(12).color(BREEZE_TEXT_DIM))
+                .width(Length::Fixed(90.0))
+                .align_x(Alignment::Start),
+            container(text("Commit").size(12).color(BREEZE_TEXT_DIM))
+                .width(Length::Fixed(95.0))
+                .align_x(Alignment::Start),
+            container(text("Commit title").size(12).color(BREEZE_TEXT_DIM))
+                .width(Fill)
+                .align_x(Alignment::Start),
+            container(text("Retention").size(12).color(BREEZE_TEXT_DIM))
+                .width(Length::Fixed(240.0))
+                .align_x(Alignment::Start),
         ]
-        .spacing(8)
-        .padding([4, 6]),
-    );
+        .spacing(10)
+        .padding([8, 12])
+        .align_y(Alignment::Center),
+    )
+    .width(Fill)
+    .style(|_theme: &Theme| container::Style {
+        background: Some(Background::Color(BREEZE_BG_HEADER)),
+        border: Border {
+            color: BREEZE_BORDER,
+            width: 1.0,
+            radius: Radius {
+                top_left: 5.0,
+                top_right: 5.0,
+                bottom_left: 0.0,
+                bottom_right: 0.0,
+            },
+        },
+        ..Default::default()
+    });
+
+    col = col.push(header_row);
 
     if indices.is_empty() {
         col = col.push(
-            text("No recent deployments recorded")
-                .size(12)
-                .color(COLOR_GRAY),
+            container(
+                text("No recent deployments recorded")
+                    .size(13)
+                    .color(BREEZE_TEXT_MUTED),
+            )
+            .padding([16, 12])
+            .width(Fill),
         );
     } else {
-        for idx in indices.into_iter().take(limit) {
+        for (i, idx) in indices.into_iter().take(limit).enumerate() {
             let dep = &state.store.deployments[idx];
-            col = col.push(deployment_row(dep, &state.store));
+            let is_alt = i % 2 == 1;
+            col = col.push(deployment_row(dep, &state.store, is_alt));
         }
     }
 
     card("Recent Deployments", None, col.into())
 }
 
-fn deployment_row<'a>(dep: &'a Deployment, store: &'a Store) -> Element<'a, OverviewMessage> {
+fn deployment_row<'a>(
+    dep: &'a Deployment,
+    store: &'a Store,
+    is_alt: bool,
+) -> Element<'a, OverviewMessage> {
     let ended = dep
         .ended_at
         .as_deref()
@@ -861,52 +934,85 @@ fn deployment_row<'a>(dep: &'a Deployment, store: &'a Store) -> Element<'a, Over
     let commit = dep.commit_id().map(short_commit).unwrap_or("—");
     let title = dep.commit_msg().map(commit_title).unwrap_or_default();
 
-    let mut roles = Row::new().spacing(4);
+    let mut roles = Row::new().spacing(6).align_y(Alignment::Center);
     if dep.is_switched(store) {
         roles = roles.push(badge(
             "switched",
-            Color::from_rgba(COLOR_BLUE.r, COLOR_BLUE.g, COLOR_BLUE.b, 0.2),
-            COLOR_BLUE,
+            Color::from_rgba(BREEZE_ACCENT.r, BREEZE_ACCENT.g, BREEZE_ACCENT.b, 0.16),
+            Color::from_rgba(BREEZE_ACCENT.r, BREEZE_ACCENT.g, BREEZE_ACCENT.b, 0.45),
+            BREEZE_ACCENT,
         ));
     }
     if dep.is_booted(store) {
         roles = roles.push(badge(
             "booted",
-            Color::from_rgba(COLOR_TEAL.r, COLOR_TEAL.g, COLOR_TEAL.b, 0.2),
-            COLOR_TEAL,
+            Color::from_rgba(BREEZE_TEAL.r, BREEZE_TEAL.g, BREEZE_TEAL.b, 0.16),
+            Color::from_rgba(BREEZE_TEAL.r, BREEZE_TEAL.g, BREEZE_TEAL.b, 0.45),
+            BREEZE_TEAL,
         ));
     }
     if dep.is_boot_entry(store) {
         roles = roles.push(badge(
             "boot entry",
-            Color::from_rgba(COLOR_PURPLE.r, COLOR_PURPLE.g, COLOR_PURPLE.b, 0.2),
-            COLOR_PURPLE,
+            Color::from_rgba(BREEZE_PURPLE.r, BREEZE_PURPLE.g, BREEZE_PURPLE.b, 0.16),
+            Color::from_rgba(BREEZE_PURPLE.r, BREEZE_PURPLE.g, BREEZE_PURPLE.b, 0.45),
+            BREEZE_PURPLE,
         ));
     }
     if dep.is_successful(store) {
         roles = roles.push(badge(
             "successful",
-            Color::from_rgba(COLOR_AMBER.r, COLOR_AMBER.g, COLOR_AMBER.b, 0.2),
-            COLOR_AMBER,
+            Color::from_rgba(BREEZE_WARNING.r, BREEZE_WARNING.g, BREEZE_WARNING.b, 0.16),
+            Color::from_rgba(BREEZE_WARNING.r, BREEZE_WARNING.g, BREEZE_WARNING.b, 0.45),
+            BREEZE_WARNING,
         ));
     }
 
-    row![
-        text(ended).size(12).width(Length::Fixed(120.0)),
-        container(status_chip(op)).width(Length::Fixed(90.0)),
-        container(status_chip(status)).width(Length::Fixed(80.0)),
-        text(commit)
-            .size(12)
-            .font(Font::MONOSPACE)
-            .width(Length::Fixed(90.0)),
-        text(title)
-            .size(11)
-            .color(Color::from_rgb(0.7, 0.7, 0.75))
-            .width(Fill),
-        roles.width(Length::Fixed(200.0)),
-    ]
-    .spacing(8)
-    .align_y(Alignment::Center)
-    .padding([4, 6])
+    let bg_color = if is_alt {
+        BREEZE_BG_ROW_ALT
+    } else {
+        BREEZE_BG_CARD
+    };
+
+    container(
+        row![
+            container(text(ended).size(13).color(BREEZE_TEXT))
+                .width(Length::Fixed(125.0))
+                .align_x(Alignment::Start),
+            container(status_chip(op))
+                .width(Length::Fixed(95.0))
+                .align_x(Alignment::Start),
+            container(status_chip(status))
+                .width(Length::Fixed(90.0))
+                .align_x(Alignment::Start),
+            container(
+                text(commit)
+                    .size(13)
+                    .font(Font::MONOSPACE)
+                    .color(BREEZE_TEXT_DIM),
+            )
+            .width(Length::Fixed(95.0))
+            .align_x(Alignment::Start),
+            container(text(title).size(13).color(BREEZE_TEXT_DIM))
+                .width(Fill)
+                .align_x(Alignment::Start),
+            container(roles)
+                .width(Length::Fixed(240.0))
+                .align_x(Alignment::Start),
+        ]
+        .spacing(10)
+        .padding([8, 12])
+        .align_y(Alignment::Center),
+    )
+    .width(Fill)
+    .style(move |_theme: &Theme| container::Style {
+        background: Some(Background::Color(bg_color)),
+        border: Border {
+            color: BREEZE_BORDER_SUBTLE,
+            width: 1.0,
+            radius: Radius::default(),
+        },
+        ..Default::default()
+    })
     .into()
 }

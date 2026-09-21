@@ -8,7 +8,7 @@ repository = "https://github.com/JuanDelPueblo/comin-tray"
 
 [dependencies]
 anyhow = "1"
-iced = { version = "0.13.1", default-features = false, features = ["tiny-skia", "tokio"] }
+iced = { version = "0.13.1", default-features = false, features = ["tiny-skia", "tokio", "fira-sans"] }
 ksni = "0.3.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

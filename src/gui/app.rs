@@ -1,8 +1,9 @@
 use std::{path::Path, time::Duration};
 
 use iced::{
-    Alignment, Element, Fill, Size, Subscription, Task, Theme,
-    widget::{button, column, horizontal_space, row, text},
+    Alignment, Background, Border, Color, Element, Fill, Font, Size, Subscription, Task, Theme,
+    border::Radius,
+    widget::{button, column, container, horizontal_space, row, text},
     window,
 };
 
@@ -11,6 +12,10 @@ use crate::{
     gui::{
         log_view::{LogMessage, LogView},
         overview::{self, OverviewMessage},
+        theme::{
+            BREEZE_ACCENT, BREEZE_BG_HEADER, BREEZE_BG_HOVER, BREEZE_BG_WINDOW,
+            BREEZE_BORDER_SUBTLE, BREEZE_TEXT_DIM,
+        },
     },
     logs,
     model::CominState,
@@ -86,10 +91,7 @@ impl CominGui {
                 self.active_tab = tab;
                 Task::none()
             }
-            Message::Tick => {
-                // UI tick for updating relative timestamps
-                Task::none()
-            }
+            Message::Tick => Task::none(),
             Message::StatusLoaded(boxed_result) => {
                 match *boxed_result {
                     Ok(state) => {
@@ -221,34 +223,118 @@ impl CominGui {
             Tab::Logs => self.log_view.view().map(Message::Log),
         };
 
-        column![nav, page_content].width(Fill).height(Fill).into()
+        container(column![nav, page_content].width(Fill).height(Fill))
+            .width(Fill)
+            .height(Fill)
+            .style(|_theme: &Theme| container::Style {
+                background: Some(Background::Color(BREEZE_BG_WINDOW)),
+                ..Default::default()
+            })
+            .into()
     }
 
     fn view_navbar(&self) -> Element<'_, Message> {
-        let overview_btn = button(text("Overview").size(13))
+        let is_overview = self.active_tab == Tab::Overview;
+        let is_logs = self.active_tab == Tab::Logs;
+
+        let overview_tab = button(text("Overview").size(13))
             .on_press(Message::TabSelected(Tab::Overview))
-            .style(if self.active_tab == Tab::Overview {
-                button::primary
-            } else {
-                button::secondary
+            .style(move |_theme: &Theme, status: button::Status| {
+                if is_overview {
+                    button::Style {
+                        background: Some(Background::Color(BREEZE_ACCENT)),
+                        text_color: Color::WHITE,
+                        border: Border {
+                            radius: Radius::from(4.0),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                } else {
+                    let bg = match status {
+                        button::Status::Hovered => Some(Background::Color(BREEZE_BG_HOVER)),
+                        _ => None,
+                    };
+                    button::Style {
+                        background: bg,
+                        text_color: BREEZE_TEXT_DIM,
+                        border: Border {
+                            radius: Radius::from(4.0),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                }
             })
-            .padding([6, 16]);
+            .padding([7, 20]);
 
-        let logs_btn = button(text("Logs").size(13))
+        let logs_tab = button(text("Logs").size(13))
             .on_press(Message::TabSelected(Tab::Logs))
-            .style(if self.active_tab == Tab::Logs {
-                button::primary
-            } else {
-                button::secondary
+            .style(move |_theme: &Theme, status: button::Status| {
+                if is_logs {
+                    button::Style {
+                        background: Some(Background::Color(BREEZE_ACCENT)),
+                        text_color: Color::WHITE,
+                        border: Border {
+                            radius: Radius::from(4.0),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                } else {
+                    let bg = match status {
+                        button::Status::Hovered => Some(Background::Color(BREEZE_BG_HOVER)),
+                        _ => None,
+                    };
+                    button::Style {
+                        background: bg,
+                        text_color: BREEZE_TEXT_DIM,
+                        border: Border {
+                            radius: Radius::from(4.0),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }
+                }
             })
-            .padding([6, 16]);
+            .padding([7, 20]);
 
-        row![overview_btn, logs_btn, horizontal_space(),]
+        let tab_segment = container(row![overview_tab, logs_tab].spacing(2))
+            .padding(3)
+            .style(|_theme: &Theme| container::Style {
+                background: Some(Background::Color(BREEZE_BG_HEADER)),
+                border: Border {
+                    color: BREEZE_BORDER_SUBTLE,
+                    width: 1.0,
+                    radius: Radius::from(6.0),
+                },
+                ..Default::default()
+            });
+
+        row![tab_segment, horizontal_space(),]
             .spacing(8)
-            .padding([10, 16])
+            .padding([12, 20])
             .align_y(Alignment::Center)
             .into()
     }
+}
+
+fn load_font_bytes(pattern: &str) -> Option<Vec<u8>> {
+    let output = std::process::Command::new("fc-match")
+        .arg("-f")
+        .arg("%{file}")
+        .arg(pattern)
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        let path_str = String::from_utf8(output.stdout).ok()?;
+        let path = path_str.trim();
+        if !path.is_empty() {
+            return std::fs::read(path).ok();
+        }
+    }
+    None
 }
 
 pub fn run(initial_page: GuiPage) -> iced::Result {
@@ -278,18 +364,30 @@ pub fn run(initial_page: GuiPage) -> iced::Result {
     }
     let _cleanup = PidCleanup(lock_file);
 
-    iced::application(CominGui::title, CominGui::update, CominGui::view)
+    let mut app = iced::application(CominGui::title, CominGui::update, CominGui::view)
         .subscription(CominGui::subscription)
         .theme(|_| Theme::Dark)
         .window(window::Settings {
-            size: Size::new(1100.0, 750.0),
-            min_size: Some(Size::new(800.0, 500.0)),
+            size: Size::new(1180.0, 820.0),
+            min_size: Some(Size::new(900.0, 600.0)),
             resizable: true,
             platform_specific: window::settings::PlatformSpecific {
                 application_id: "comin-tray".into(),
                 ..Default::default()
             },
             ..window::Settings::default()
-        })
-        .run_with(move || CominGui::new(initial_page))
+        });
+
+    if let Some(sans_bytes) = load_font_bytes("Noto Sans") {
+        app = app.font(sans_bytes).default_font(Font {
+            family: iced::font::Family::Name("Noto Sans"),
+            ..Font::DEFAULT
+        });
+    }
+
+    if let Some(mono_bytes) = load_font_bytes("monospace") {
+        app = app.font(mono_bytes);
+    }
+
+    app.run_with(move || CominGui::new(initial_page))
 }
