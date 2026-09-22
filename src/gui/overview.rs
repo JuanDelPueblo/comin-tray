@@ -8,7 +8,7 @@ use crate::{
     format::{commit_title, format_relative_time_now, short_commit, short_store_path},
     gui::{
         theme::{
-            BREEZE_ACCENT, BREEZE_BG_CARD, BREEZE_BG_HEADER, BREEZE_BG_ROW_ALT, BREEZE_BORDER,
+            BREEZE_ACCENT, BREEZE_BG_CARD, BREEZE_BG_HEADER, BREEZE_BG_ROW_ALT,
             BREEZE_BORDER_SUBTLE, BREEZE_DANGER, BREEZE_PURPLE, BREEZE_TEAL, BREEZE_TEXT,
             BREEZE_TEXT_DIM, BREEZE_TEXT_MUTED, BREEZE_WARNING, primary_button_style,
             secondary_button_style, success_button_style,
@@ -321,28 +321,30 @@ fn lifecycle_source<'a>(state: &'a CominState) -> Element<'a, OverviewMessage> {
         .map(commit_title)
         .unwrap_or_default();
 
-    column![
+    let mut col = column![
         text("Git source").size(13).color(BREEZE_TEXT_DIM),
         text(format!("{remote}/{branch}"))
             .size(14)
             .color(BREEZE_TEXT),
-        if !commit_id.is_empty() {
+    ]
+    .spacing(5);
+
+    if !commit_id.is_empty() {
+        col = col.push(
             text(short_commit(commit_id))
                 .size(13)
                 .font(Font::MONOSPACE)
-                .color(BREEZE_TEXT_DIM)
-        } else {
-            text("—").size(13).color(BREEZE_TEXT_MUTED)
-        },
-        if !title.is_empty() {
-            text(title).size(12).color(BREEZE_TEXT_DIM)
-        } else {
-            text("").size(0)
-        },
-    ]
-    .spacing(5)
-    .width(Fill)
-    .into()
+                .color(BREEZE_TEXT_DIM),
+        );
+    } else {
+        col = col.push(text("—").size(13).color(BREEZE_TEXT_MUTED));
+    }
+
+    if !title.is_empty() {
+        col = col.push(text(title).size(12).color(BREEZE_TEXT_DIM));
+    }
+
+    col.width(Fill).into()
 }
 
 fn lifecycle_fetch<'a>(state: &'a CominState) -> Element<'a, OverviewMessage> {
@@ -882,14 +884,9 @@ fn recent_deployments_card<'a>(state: &'a CominState) -> Element<'a, OverviewMes
     .style(|_theme: &Theme| container::Style {
         background: Some(Background::Color(BREEZE_BG_HEADER)),
         border: Border {
-            color: BREEZE_BORDER,
+            color: BREEZE_BORDER_SUBTLE,
             width: 1.0,
-            radius: Radius {
-                top_left: 5.0,
-                top_right: 5.0,
-                bottom_left: 0.0,
-                bottom_right: 0.0,
-            },
+            radius: Radius::default(),
         },
         ..Default::default()
     });
