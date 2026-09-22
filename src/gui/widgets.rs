@@ -1,14 +1,10 @@
 use iced::{
     Alignment, Background, Border, Color, Element, Fill, Length, Theme,
     border::Radius,
-    widget::{Row, button, column, container, row, text},
+    widget::{Row, button, column, container, text},
 };
 
-use crate::gui::theme::{
-    BREEZE_ACCENT, BREEZE_BG_CARD, BREEZE_BORDER, BREEZE_DANGER, BREEZE_PURPLE, BREEZE_SUCCESS,
-    BREEZE_TEAL, BREEZE_TEXT, BREEZE_TEXT_DIM, BREEZE_TEXT_MUTED, BREEZE_WARNING, card_style,
-    secondary_button_style,
-};
+use crate::gui::theme::{BREEZE_BORDER_SUBTLE, BREEZE_TEXT, card_style, secondary_button_style};
 
 pub fn badge<'a, Message: 'a>(
     label: impl Into<String>,
@@ -37,24 +33,43 @@ pub fn badge<'a, Message: 'a>(
 
 pub fn status_chip<'a, Message: 'a>(status: &str) -> Element<'a, Message> {
     let s = status.to_ascii_lowercase();
-    let (color, fg) = match s.as_str() {
-        "done" | "evaluated" | "built" | "successful" | "active" | "fetched" => {
-            (BREEZE_SUCCESS, BREEZE_SUCCESS)
-        }
-        "failed" | "error" => (BREEZE_DANGER, BREEZE_DANGER),
-        "evaluating" | "building" | "deploying" | "fetching" | "running" => {
-            (BREEZE_ACCENT, BREEZE_ACCENT)
-        }
-        "suspended" | "reboot required" | "confirmation required" => {
-            (BREEZE_WARNING, BREEZE_WARNING)
-        }
-        "boot" => (BREEZE_TEAL, BREEZE_TEAL),
-        "switch" => (BREEZE_PURPLE, BREEZE_PURPLE),
-        _ => (BREEZE_TEXT_MUTED, BREEZE_TEXT_DIM),
+    let (bg, border, fg) = match s.as_str() {
+        "done" | "evaluated" | "built" | "successful" | "active" | "fetched" => (
+            Color::from_rgba(0.18, 0.76, 0.49, 0.15),
+            Color::from_rgba(0.18, 0.76, 0.49, 0.40),
+            Color::from_rgb(0.24, 0.85, 0.55),
+        ),
+        "failed" | "error" => (
+            Color::from_rgba(0.93, 0.27, 0.27, 0.15),
+            Color::from_rgba(0.93, 0.27, 0.27, 0.40),
+            Color::from_rgb(0.98, 0.40, 0.40),
+        ),
+        "evaluating" | "building" | "deploying" | "fetching" | "running" => (
+            Color::from_rgba(0.24, 0.62, 0.96, 0.15),
+            Color::from_rgba(0.24, 0.62, 0.96, 0.40),
+            Color::from_rgb(0.40, 0.75, 1.0),
+        ),
+        "suspended" | "reboot required" | "confirmation required" => (
+            Color::from_rgba(0.96, 0.65, 0.14, 0.15),
+            Color::from_rgba(0.96, 0.65, 0.14, 0.40),
+            Color::from_rgb(1.0, 0.75, 0.25),
+        ),
+        "boot" => (
+            Color::from_rgba(0.12, 0.70, 0.70, 0.15),
+            Color::from_rgba(0.12, 0.70, 0.70, 0.40),
+            Color::from_rgb(0.20, 0.82, 0.82),
+        ),
+        "switch" => (
+            Color::from_rgba(0.60, 0.40, 0.85, 0.15),
+            Color::from_rgba(0.60, 0.40, 0.85, 0.40),
+            Color::from_rgb(0.72, 0.52, 0.95),
+        ),
+        _ => (
+            Color::from_rgba(0.45, 0.48, 0.55, 0.15),
+            Color::from_rgba(0.45, 0.48, 0.55, 0.40),
+            Color::from_rgb(0.70, 0.73, 0.78),
+        ),
     };
-
-    let bg = Color::from_rgba(color.r, color.g, color.b, 0.16);
-    let border = Color::from_rgba(color.r, color.g, color.b, 0.45);
 
     badge(status, bg, border, fg)
 }
@@ -71,10 +86,10 @@ pub fn card_with_height<'a, Message: 'a>(
     title: impl Into<String>,
     badge_element: Option<Element<'a, Message>>,
     content: Element<'a, Message>,
-    height: impl Into<Length>,
+    height: Length,
 ) -> Element<'a, Message> {
     let mut header = Row::new().spacing(10).align_y(Alignment::Center);
-    header = header.push(text(title.into()).size(15).color(BREEZE_TEXT));
+    header = header.push(text(title.into()).size(14).color(BREEZE_TEXT));
 
     if let Some(b) = badge_element {
         header = header.push(b);
@@ -88,8 +103,21 @@ pub fn card_with_height<'a, Message: 'a>(
         .into()
 }
 
+#[allow(dead_code)]
+pub fn section_divider<'a, Message: 'a>() -> Element<'a, Message> {
+    container(iced::widget::Space::new(Fill, Length::Fixed(1.0)))
+        .height(Length::Fixed(1.0))
+        .width(Fill)
+        .style(|_theme: &Theme| container::Style {
+            background: Some(Background::Color(BREEZE_BORDER_SUBTLE)),
+            ..Default::default()
+        })
+        .into()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum BannerKind {
-    #[allow(dead_code)]
     Info,
     Warning,
     Error,
@@ -100,28 +128,30 @@ pub fn banner<'a, Message: Clone + 'a>(
     kind: BannerKind,
     action: Option<(&'a str, Message)>,
 ) -> Element<'a, Message> {
-    let accent_color = match kind {
-        BannerKind::Info => BREEZE_ACCENT,
-        BannerKind::Warning => BREEZE_WARNING,
-        BannerKind::Error => BREEZE_DANGER,
+    let (bg_color, border_color, icon) = match kind {
+        BannerKind::Info => (
+            Color::from_rgba(0.24, 0.62, 0.96, 0.12),
+            Color::from_rgba(0.24, 0.62, 0.96, 0.40),
+            "ℹ",
+        ),
+        BannerKind::Warning => (
+            Color::from_rgba(0.96, 0.65, 0.14, 0.12),
+            Color::from_rgba(0.96, 0.65, 0.14, 0.40),
+            "⚠",
+        ),
+        BannerKind::Error => (
+            Color::from_rgba(0.93, 0.27, 0.27, 0.12),
+            Color::from_rgba(0.93, 0.27, 0.27, 0.40),
+            "✕",
+        ),
     };
 
-    let indicator_bar = container(text("").size(0))
-        .width(Length::Fixed(4.0))
-        .height(Fill)
-        .style(move |_theme: &Theme| container::Style {
-            background: Some(Background::Color(accent_color)),
-            border: Border {
-                radius: Radius::from(2.0),
-                ..Default::default()
-            },
-            ..Default::default()
-        });
-
     let mut content_row = Row::new()
-        .spacing(12)
+        .spacing(10)
         .align_y(Alignment::Center)
         .width(Fill);
+
+    content_row = content_row.push(text(icon).size(14).color(border_color));
 
     content_row = content_row.push(text(message.into()).size(13).color(BREEZE_TEXT).width(Fill));
 
@@ -134,20 +164,15 @@ pub fn banner<'a, Message: Clone + 'a>(
         );
     }
 
-    let inner = row![indicator_bar, content_row]
-        .spacing(12)
-        .align_y(Alignment::Center)
-        .width(Fill);
-
-    container(inner)
+    container(content_row)
         .padding([10, 14])
         .width(Fill)
         .style(move |_theme: &Theme| container::Style {
-            background: Some(Background::Color(BREEZE_BG_CARD)),
+            background: Some(Background::Color(bg_color)),
             border: Border {
-                color: BREEZE_BORDER,
+                color: border_color,
                 width: 1.0,
-                radius: Radius::from(6.0),
+                radius: Radius::from(5.0),
             },
             ..Default::default()
         })
