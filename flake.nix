@@ -31,6 +31,7 @@
           # they must be added to the binary's rpath explicitly.
           windowLibraries = [
             pkgs.libGL
+            pkgs.vulkan-loader
             pkgs.libxkbcommon
             pkgs.wayland
             pkgs.libx11
