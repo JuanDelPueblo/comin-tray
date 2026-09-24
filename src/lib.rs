@@ -1,4 +1,6 @@
+pub mod build_log;
 pub mod comin;
+pub mod dbus;
 pub mod format;
 pub mod gui;
 pub mod logs;

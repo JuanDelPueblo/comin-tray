@@ -1,30 +1,34 @@
-mod comin;
-mod format;
-mod gui;
-mod logs;
-mod model;
-mod notifications;
-mod tray;
-
 use std::time::Duration;
 
-use anyhow::Result;
-use comin::CominClient;
+use anyhow::{Context, Result};
+use comin_tray::{
+    comin::CominClient,
+    dbus, format, gui, logs,
+    model::{Phase, TrayState},
+    notifications,
+    tray::{Action, CominTray, GuiPage},
+};
 use ksni::TrayMethods;
-use model::{Phase, TrayState};
 use tokio::{runtime::Builder, sync::mpsc, time::MissedTickBehavior};
-use tray::{Action, CominTray, GuiPage};
 
 fn main() -> Result<()> {
+    // Must run before any thread starts; see `format::init_local_offset`.
+    format::init_local_offset();
+
     let args: Vec<String> = std::env::args().skip(1).collect();
     let subcommand = args.first().map(String::as_str);
 
     match subcommand {
         Some("gui") => {
-            let page = if args.get(1).map(String::as_str) == Some("logs") {
-                GuiPage::Logs
-            } else {
-                GuiPage::Overview
+            let page = match args.get(1) {
+                Some(name) => match GuiPage::parse(name) {
+                    Some(page) => page,
+                    None => {
+                        eprintln!("Unknown page: {name} (expected overview, deployments or logs)");
+                        std::process::exit(1);
+                    }
+                },
+                None => GuiPage::Overview,
             };
             gui::run(page)?;
             return Ok(());
@@ -33,24 +37,37 @@ fn main() -> Result<()> {
             gui::run(GuiPage::Logs)?;
             return Ok(());
         }
+        Some("deployments") => {
+            gui::run(GuiPage::Deployments)?;
+            return Ok(());
+        }
+        Some("diagnose") => {
+            let runtime = Builder::new_multi_thread().enable_all().build()?;
+            let healthy = runtime.block_on(diagnose());
+            std::process::exit(if healthy { 0 } else { 1 });
+        }
         Some("--help" | "-h" | "help") => {
             println!("Comin GitOps Manager & System Tray\n");
             println!("Usage: comin-tray [COMMAND]\n");
             println!("Commands:");
             println!(
-                "  gui [logs]   Launch the native Comin GUI dashboard (default: Overview; 'logs' opens Logs tab)"
+                "  gui [PAGE]   Open the Comin window on PAGE: overview (default), deployments or logs"
             );
-            println!("  logs         Launch the Comin GUI directly on the Logs tab");
+            println!("  deployments  Open the Comin window on the Deployments page");
+            println!("  logs         Open the Comin window on the Logs page");
             println!(
                 "  tray         Run the persistent system tray daemon (default when run without arguments)"
             );
+            println!("  diagnose     Check why the tray icon, logs or status might not work");
             println!("  --help, -h   Print this help message");
             return Ok(());
         }
         Some("tray") | None => {}
         Some(unknown) => {
             eprintln!("Unknown argument: {unknown}");
-            eprintln!("Usage: comin-tray [gui [logs] | logs | tray | --help]");
+            eprintln!(
+                "Usage: comin-tray [gui [overview|deployments|logs] | deployments | logs | tray | diagnose | --help]"
+            );
             std::process::exit(1);
         }
     }
@@ -62,6 +79,20 @@ fn main() -> Result<()> {
 }
 
 async fn run_tray() -> Result<()> {
+    // Hold the well-known name for the lifetime of the daemon so that a
+    // second autostart entry or user service does not add a duplicate icon.
+    let _instance = match dbus::claim_tray_name().await {
+        Ok(Some(connection)) => Some(connection),
+        Ok(None) => {
+            eprintln!("comin-tray: another tray is already running; exiting");
+            return Ok(());
+        }
+        Err(error) => {
+            eprintln!("comin-tray: {error:#}; continuing without the single-instance check");
+            None
+        }
+    };
+
     let client = CominClient::default();
     let initial_state = read_state(&client).await;
     let (action_tx, mut action_rx) = mpsc::channel(8);
@@ -69,7 +100,16 @@ async fn run_tray() -> Result<()> {
         state: initial_state.clone(),
         action_tx,
     };
-    let tray_handle = tray.spawn().await?;
+
+    // XDG autostart can start the tray before Plasma's StatusNotifierWatcher
+    // is on the bus. Without `assume_sni_available`, `spawn` fails in that
+    // case and the icon never appears. With it, ksni waits for the watcher.
+    let tray_handle = tray
+        .assume_sni_available(true)
+        .spawn()
+        .await
+        .context("Could not start the tray icon service")?;
+    eprintln!("comin-tray: tray service started");
 
     let mut state = initial_state;
     let mut notified_reboot: Option<String> = None;
@@ -77,7 +117,7 @@ async fn run_tray() -> Result<()> {
     refresh.set_missed_tick_behavior(MissedTickBehavior::Skip);
     refresh.tick().await;
 
-    let mut gui_child: Option<std::process::Child> = None;
+    let mut gui_children: Vec<std::process::Child> = Vec::new();
 
     loop {
         tokio::select! {
@@ -85,7 +125,7 @@ async fn run_tray() -> Result<()> {
                 update_state(&client, &tray_handle, &mut state, &mut notified_reboot).await;
             }
             Some(action) = action_rx.recv() => {
-                run_action(&client, action, &mut gui_child).await;
+                run_action(&client, action, &mut gui_children).await;
                 update_state(&client, &tray_handle, &mut state, &mut notified_reboot).await;
             }
             else => break,
@@ -93,6 +133,39 @@ async fn run_tray() -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn diagnose() -> bool {
+    let mut healthy = true;
+    let mut print = |ok: bool, label: &str, detail: &str| {
+        healthy &= ok;
+        let mark = if ok { "ok  " } else { "FAIL" };
+        println!("[{mark}] {label}: {detail}");
+    };
+
+    for check in dbus::session_checks().await {
+        print(check.ok, &check.label, &check.detail);
+    }
+
+    match CominClient::default().status().await {
+        Ok(status) => print(
+            true,
+            "comin status",
+            &format!(
+                "{} ({})",
+                status.hostname().unwrap_or("unknown host"),
+                status.phase().label()
+            ),
+        ),
+        Err(error) => print(false, "comin status", &format!("{error:#}")),
+    }
+
+    match logs::check_journal_access().await {
+        Ok(()) => print(true, "Journal access", "comin.service logs are readable"),
+        Err(error) => print(false, "Journal access", &error),
+    }
+
+    healthy
 }
 
 async fn read_state(client: &CominClient) -> TrayState {
@@ -146,8 +219,11 @@ async fn notify_reboot_once(next: &TrayState, notified_reboot: &mut Option<Strin
 async fn run_action(
     client: &CominClient,
     action: Action,
-    gui_child: &mut Option<std::process::Child>,
+    gui_children: &mut Vec<std::process::Child>,
 ) {
+    // Reap GUI processes that have exited so they do not linger as zombies.
+    gui_children.retain_mut(|child| matches!(child.try_wait(), Ok(None)));
+
     let result = match action {
         Action::Fetch => client.fetch().await,
         Action::Suspend => client.suspend().await,
@@ -156,35 +232,26 @@ async fn run_action(
         Action::RetryLatest => client.retry_latest().await,
         Action::AcceptConfirmation => client.accept_confirmation().await,
         Action::OpenGui(page) => {
-            if let Some(child) = gui_child.as_mut() {
-                match child.try_wait() {
-                    Ok(None) => return,
-                    _ => *gui_child = None,
-                }
-            }
-
+            // The GUI process enforces a single window itself: a second
+            // launch asks the running window to show `page` and exits.
             match std::env::current_exe() {
-                Ok(exe) => {
-                    let mut cmd = std::process::Command::new(exe);
-                    cmd.arg("gui");
-                    if page == GuiPage::Logs {
-                        cmd.arg("logs");
+                Ok(exe) => match std::process::Command::new(exe)
+                    .args(["gui", page.as_str()])
+                    .spawn()
+                {
+                    Ok(child) => {
+                        gui_children.push(child);
+                        Ok(())
                     }
-                    match cmd.spawn() {
-                        Ok(child) => {
-                            *gui_child = Some(child);
-                            Ok(())
-                        }
-                        Err(error) => Err(anyhow::anyhow!("Failed to launch GUI: {error}")),
-                    }
-                }
+                    Err(error) => Err(anyhow::anyhow!("Failed to launch GUI: {error}")),
+                },
                 Err(error) => Err(anyhow::anyhow!(
                     "Failed to get current executable path: {error}"
                 )),
             }
         }
         Action::Quit => {
-            if let Some(mut child) = gui_child.take() {
+            for child in gui_children.iter_mut() {
                 let _ = child.kill();
             }
             std::process::exit(0);
@@ -192,6 +259,7 @@ async fn run_action(
     };
 
     if let Err(error) = result {
+        eprintln!("comin-tray: action failed: {error:#}");
         let _ =
             notifications::send("Comin action failed", &error.to_string(), "dialog-error").await;
     }

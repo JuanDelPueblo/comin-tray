@@ -1,5 +1,5 @@
 use iced::{
-    Alignment, Background, Border, Color, Element, Fill, Font, Length, Theme,
+    Alignment, Background, Border, Element, Fill, Font, Length, Theme,
     border::Radius,
     widget::{Column, Row, button, column, container, horizontal_space, row, scrollable, text},
 };
@@ -8,18 +8,21 @@ use crate::{
     format::{commit_title, format_relative_time_now, short_commit, short_store_path},
     gui::{
         theme::{
-            BREEZE_ACCENT, BREEZE_BG_CARD, BREEZE_BG_HEADER, BREEZE_BG_ROW_ALT,
-            BREEZE_BORDER_SUBTLE, BREEZE_DANGER, BREEZE_PURPLE, BREEZE_TEAL, BREEZE_TEXT,
+            BREEZE_BG_CARD, BREEZE_BG_HOVER, BREEZE_BORDER_SUBTLE, BREEZE_DANGER, BREEZE_TEXT,
             BREEZE_TEXT_DIM, BREEZE_TEXT_MUTED, BREEZE_WARNING, primary_button_style,
             secondary_button_style, success_button_style,
         },
-        widgets::{BannerKind, badge, banner, card, card_with_height, status_chip},
+        widgets::{BannerKind, banner, card, card_with_height, retention_badges, status_chip},
     },
-    model::{CominState, Deployment, Phase, Store},
+    model::{CominState, Phase},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OverviewMessage {
+    /// Show the Deployments page.
+    OpenDeployments,
+    /// Show one deployment or generation on the Deployments page.
+    OpenDeployment(String),
     Fetch,
     Suspend,
     Resume,
@@ -833,183 +836,89 @@ fn deployer_card_content<'a>(state: &'a CominState) -> Element<'a, OverviewMessa
     col.into()
 }
 
+/// The three newest items of the deployment history, with a link to the
+/// Deployments page for the rest.
 fn recent_deployments_card<'a>(state: &'a CominState) -> Element<'a, OverviewMessage> {
-    let mut indices: Vec<usize> = (0..state.store.deployments.len()).collect();
-    indices.sort_by(|&a, &b| {
-        let dep_a = &state.store.deployments[a];
-        let dep_b = &state.store.deployments[b];
-        let ta = dep_a
-            .ended_at
-            .as_deref()
-            .or(dep_a.created_at.as_deref())
-            .unwrap_or("");
-        let tb = dep_b
-            .ended_at
-            .as_deref()
-            .or(dep_b.created_at.as_deref())
-            .unwrap_or("");
-        tb.cmp(ta)
-    });
+    let history = state.history();
+    let mut col = Column::new().spacing(4).width(Fill);
 
-    let limit = 8;
-    let mut col = Column::new().spacing(0).width(Fill);
-
-    // Breeze Table Header
-    let header_row = container(
-        row![
-            container(text("Ended").size(12).color(BREEZE_TEXT_DIM))
-                .width(Length::Fixed(125.0))
-                .align_x(Alignment::Start),
-            container(text("Operation").size(12).color(BREEZE_TEXT_DIM))
-                .width(Length::Fixed(95.0))
-                .align_x(Alignment::Start),
-            container(text("Status").size(12).color(BREEZE_TEXT_DIM))
-                .width(Length::Fixed(90.0))
-                .align_x(Alignment::Start),
-            container(text("Commit").size(12).color(BREEZE_TEXT_DIM))
-                .width(Length::Fixed(95.0))
-                .align_x(Alignment::Start),
-            container(text("Commit title").size(12).color(BREEZE_TEXT_DIM))
-                .width(Fill)
-                .align_x(Alignment::Start),
-            container(text("Retention").size(12).color(BREEZE_TEXT_DIM))
-                .width(Length::Fixed(240.0))
-                .align_x(Alignment::Start),
-        ]
-        .spacing(10)
-        .padding([8, 12])
-        .align_y(Alignment::Center),
-    )
-    .width(Fill)
-    .style(|_theme: &Theme| container::Style {
-        background: Some(Background::Color(BREEZE_BG_HEADER)),
-        border: Border {
-            color: BREEZE_BORDER_SUBTLE,
-            width: 1.0,
-            radius: Radius::default(),
-        },
-        ..Default::default()
-    });
-
-    col = col.push(header_row);
-
-    if indices.is_empty() {
+    if history.is_empty() {
         col = col.push(
-            container(
-                text("No recent deployments recorded")
-                    .size(13)
-                    .color(BREEZE_TEXT_MUTED),
-            )
-            .padding([16, 12])
-            .width(Fill),
+            text("No deployments recorded yet")
+                .size(13)
+                .color(BREEZE_TEXT_MUTED),
         );
-    } else {
-        for (i, idx) in indices.into_iter().take(limit).enumerate() {
-            let dep = &state.store.deployments[idx];
-            let is_alt = i % 2 == 1;
-            col = col.push(deployment_row(dep, &state.store, is_alt));
+    }
+
+    for item in history.iter().take(3) {
+        let when = if item.active {
+            "in progress".to_string()
+        } else if item.time_key().is_empty() {
+            "—".to_string()
+        } else {
+            format_relative_time_now(item.time_key())
+        };
+        let mut chips = Row::new().spacing(6).align_y(Alignment::Center);
+        chips = chips.push(status_chip(item.status()));
+        if let Some(operation) = item.operation() {
+            chips = chips.push(status_chip(operation));
         }
-    }
 
-    card("Recent Deployments", None, col.into())
-}
-
-fn deployment_row<'a>(
-    dep: &'a Deployment,
-    store: &'a Store,
-    is_alt: bool,
-) -> Element<'a, OverviewMessage> {
-    let ended = dep
-        .ended_at
-        .as_deref()
-        .or(dep.created_at.as_deref())
-        .map(format_relative_time_now)
-        .unwrap_or_else(|| "—".into());
-
-    let op = dep.operation.as_deref().unwrap_or("—");
-    let status = dep.status.as_deref().unwrap_or("—");
-    let commit = dep.commit_id().map(short_commit).unwrap_or("—");
-    let title = dep.commit_msg().map(commit_title).unwrap_or_default();
-
-    let mut roles = Row::new().spacing(6).align_y(Alignment::Center);
-    if dep.is_switched(store) {
-        roles = roles.push(badge(
-            "switched",
-            Color::from_rgba(BREEZE_ACCENT.r, BREEZE_ACCENT.g, BREEZE_ACCENT.b, 0.16),
-            Color::from_rgba(BREEZE_ACCENT.r, BREEZE_ACCENT.g, BREEZE_ACCENT.b, 0.45),
-            BREEZE_ACCENT,
-        ));
-    }
-    if dep.is_booted(store) {
-        roles = roles.push(badge(
-            "booted",
-            Color::from_rgba(BREEZE_TEAL.r, BREEZE_TEAL.g, BREEZE_TEAL.b, 0.16),
-            Color::from_rgba(BREEZE_TEAL.r, BREEZE_TEAL.g, BREEZE_TEAL.b, 0.45),
-            BREEZE_TEAL,
-        ));
-    }
-    if dep.is_boot_entry(store) {
-        roles = roles.push(badge(
-            "boot entry",
-            Color::from_rgba(BREEZE_PURPLE.r, BREEZE_PURPLE.g, BREEZE_PURPLE.b, 0.16),
-            Color::from_rgba(BREEZE_PURPLE.r, BREEZE_PURPLE.g, BREEZE_PURPLE.b, 0.45),
-            BREEZE_PURPLE,
-        ));
-    }
-    if dep.is_successful(store) {
-        roles = roles.push(badge(
-            "successful",
-            Color::from_rgba(BREEZE_WARNING.r, BREEZE_WARNING.g, BREEZE_WARNING.b, 0.16),
-            Color::from_rgba(BREEZE_WARNING.r, BREEZE_WARNING.g, BREEZE_WARNING.b, 0.45),
-            BREEZE_WARNING,
-        ));
-    }
-
-    let bg_color = if is_alt {
-        BREEZE_BG_ROW_ALT
-    } else {
-        BREEZE_BG_CARD
-    };
-
-    container(
-        row![
-            container(text(ended).size(13).color(BREEZE_TEXT))
-                .width(Length::Fixed(125.0))
-                .align_x(Alignment::Start),
-            container(status_chip(op))
-                .width(Length::Fixed(95.0))
-                .align_x(Alignment::Start),
-            container(status_chip(status))
-                .width(Length::Fixed(90.0))
-                .align_x(Alignment::Start),
-            container(
-                text(commit)
-                    .size(13)
-                    .font(Font::MONOSPACE)
-                    .color(BREEZE_TEXT_DIM),
+        let content = row![
+            container(text(when).size(13).color(BREEZE_TEXT)).width(Length::Fixed(110.0)),
+            container(chips).width(Length::Fixed(200.0)),
+            text(
+                item.commit_id()
+                    .map(short_commit)
+                    .unwrap_or("—")
+                    .to_string()
             )
-            .width(Length::Fixed(95.0))
-            .align_x(Alignment::Start),
-            container(text(title).size(13).color(BREEZE_TEXT_DIM))
-                .width(Fill)
-                .align_x(Alignment::Start),
-            container(roles)
-                .width(Length::Fixed(240.0))
-                .align_x(Alignment::Start),
+            .size(13)
+            .font(Font::MONOSPACE)
+            .color(BREEZE_TEXT_DIM)
+            .width(Length::Fixed(80.0)),
+            text(
+                item.commit_msg()
+                    .map(commit_title)
+                    .unwrap_or_default()
+                    .to_string()
+            )
+            .size(13)
+            .color(BREEZE_TEXT_DIM)
+            .width(Fill),
+            container(match item.deployment {
+                Some(deployment) => retention_badges(deployment, &state.store),
+                None => Row::new().into(),
+            }),
         ]
         .spacing(10)
-        .padding([8, 12])
-        .align_y(Alignment::Center),
-    )
-    .width(Fill)
-    .style(move |_theme: &Theme| container::Style {
-        background: Some(Background::Color(bg_color)),
-        border: Border {
-            color: BREEZE_BORDER_SUBTLE,
-            width: 1.0,
-            radius: Radius::default(),
-        },
-        ..Default::default()
-    })
-    .into()
+        .align_y(Alignment::Center);
+
+        col = col.push(
+            button(content)
+                .on_press(OverviewMessage::OpenDeployment(item.key.clone()))
+                .width(Fill)
+                .padding([8, 12])
+                .style(|_theme: &Theme, status: button::Status| button::Style {
+                    background: Some(Background::Color(match status {
+                        button::Status::Hovered => BREEZE_BG_HOVER,
+                        _ => BREEZE_BG_CARD,
+                    })),
+                    text_color: BREEZE_TEXT,
+                    border: Border {
+                        color: BREEZE_BORDER_SUBTLE,
+                        width: 1.0,
+                        radius: Radius::from(4.0),
+                    },
+                    ..Default::default()
+                }),
+        );
+    }
+
+    let view_all = button(text(format!("View all ({}) →", history.len())).size(12))
+        .on_press(OverviewMessage::OpenDeployments)
+        .style(secondary_button_style)
+        .padding([4, 10]);
+
+    card("Recent Deployments", Some(view_all.into()), col.into())
 }

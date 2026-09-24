@@ -52,6 +52,10 @@
             postInstall = ''
               install -Dm644 data/comin-tray.desktop \
                 $out/share/applications/comin-tray.desktop
+              # Not installed into etc/xdg/autostart, which would start the
+              # tray for every user of a system package. See the README.
+              install -Dm644 data/comin-tray-autostart.desktop \
+                $out/share/comin-tray/comin-tray-autostart.desktop
 
               patchelf --add-rpath ${nixpkgs.lib.makeLibraryPath windowLibraries} \
                 $out/bin/comin-tray
@@ -75,6 +79,44 @@
           };
         }
       );
+
+      # Runs the tray as a systemd user service tied to the graphical session.
+      # Restart=on-failure recovers from a panel or D-Bus restart, and the
+      # journal of the unit (`journalctl --user -u comin-tray`) shows why the
+      # icon is missing when it is.
+      homeManagerModules.default =
+        { config, lib, pkgs, ... }:
+        let
+          cfg = config.services.comin-tray;
+        in
+        {
+          options.services.comin-tray = {
+            enable = lib.mkEnableOption "the Comin system tray indicator";
+            package = lib.mkOption {
+              type = lib.types.package;
+              default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+              defaultText = lib.literalExpression "comin-tray.packages.\${system}.default";
+              description = "The comin-tray package to run.";
+            };
+          };
+
+          config = lib.mkIf cfg.enable {
+            home.packages = [ cfg.package ];
+            systemd.user.services.comin-tray = {
+              Unit = {
+                Description = "Comin system tray indicator";
+                PartOf = [ "graphical-session.target" ];
+                After = [ "graphical-session.target" ];
+              };
+              Service = {
+                ExecStart = "${lib.getExe cfg.package} tray";
+                Restart = "on-failure";
+                RestartSec = 3;
+              };
+              Install.WantedBy = [ "graphical-session.target" ];
+            };
+          };
+        };
 
       apps = forAllSystems (system: {
         default = {
