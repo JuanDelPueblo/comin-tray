@@ -37,9 +37,9 @@ pub const ROW_HEIGHT: f32 = 20.0;
 /// layout changes while the user scrolls.
 pub const OVERSCAN: usize = 8;
 
-/// Width of the time, level and source columns plus spacing and padding.
+/// Width of the time, level and icon columns plus spacing and padding.
 const FIXED_COLUMNS_WIDTH: f32 =
-    64.0 + 58.0 + 70.0 + ICON_WIDTH + 4.0 * 10.0 + 2.0 * 8.0 + 2.0 * 4.0 + 16.0;
+    64.0 + 58.0 + ICON_WIDTH + 3.0 * 10.0 + 2.0 * 8.0 + 2.0 * 4.0 + 16.0;
 
 /// Width of the column with the nom-style status icon.
 const ICON_WIDTH: f32 = 14.0;
@@ -254,12 +254,16 @@ fn log_row(
     colors: bool,
 ) -> Element<'_, LogListMessage> {
     let entry = row.entry;
-    let message = fit_line(row.text, max_chars);
-    let source = if entry.identifier.is_empty() || entry.identifier == "comin" {
-        String::new()
-    } else {
-        entry.identifier.clone()
+    // Lines from other programs in the unit, such as `bootctl`, name their
+    // source inline, the way journalctl does; Comin's own lines do not.
+    let source = match entry.identifier.as_str() {
+        "" | "comin" => String::new(),
+        identifier => format!("{identifier}: "),
     };
+    let message = fit_line(
+        row.text,
+        max_chars.saturating_sub(source.chars().count()).max(10),
+    );
     let (icon, icon_color) = if colors {
         kind_icon(row.kind, &message)
     } else {
@@ -267,20 +271,26 @@ fn log_row(
     };
 
     let body: Element<'_, LogListMessage> = if colors {
-        let spans: Vec<_> = highlight(&message, row.kind, entry.from_comin)
+        let source_span = (!source.is_empty())
+            .then(|| span(source).color(BREEZE_TEXT_MUTED).font(Font::MONOSPACE));
+        let spans: Vec<_> = source_span
             .into_iter()
-            .map(|(range, token)| {
-                let (color, bold) = token_style(token);
-                let font = if bold {
-                    Font {
-                        weight: font::Weight::Bold,
-                        ..Font::MONOSPACE
-                    }
-                } else {
-                    Font::MONOSPACE
-                };
-                span(message[range].to_string()).color(color).font(font)
-            })
+            .chain(
+                highlight(&message, row.kind, entry.from_comin)
+                    .into_iter()
+                    .map(|(range, token)| {
+                        let (color, bold) = token_style(token);
+                        let font = if bold {
+                            Font {
+                                weight: font::Weight::Bold,
+                                ..Font::MONOSPACE
+                            }
+                        } else {
+                            Font::MONOSPACE
+                        };
+                        span(message[range].to_string()).color(color).font(font)
+                    }),
+            )
             .collect();
         rich_text(spans)
             .size(12)
@@ -297,7 +307,7 @@ fn log_row(
         } else {
             BREEZE_TEXT
         };
-        text(message)
+        text(format!("{source}{message}"))
             .size(12)
             .font(Font::MONOSPACE)
             .color(color)
@@ -315,11 +325,6 @@ fn log_row(
             .size(12)
             .width(Length::Fixed(58.0))
             .color(priority_color(entry.priority)),
-        text(source)
-            .size(12)
-            .width(Length::Fixed(70.0))
-            .color(BREEZE_TEXT_MUTED)
-            .wrapping(Wrapping::None),
         text(icon)
             .size(12)
             .width(Length::Fixed(ICON_WIDTH))
