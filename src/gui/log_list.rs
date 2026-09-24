@@ -10,15 +10,22 @@ use std::borrow::Cow;
 use iced::{
     Alignment, Background, Border, Color, Element, Fill, Font, Length, Task, Theme,
     border::Radius,
+    font,
     keyboard::Modifiers,
-    widget::{Column, Space, container, mouse_area, row, scrollable, text, text::Wrapping},
+    widget::{
+        Column, Space, container, mouse_area, rich_text, row, scrollable, span, text,
+        text::Wrapping,
+    },
 };
 
 use crate::{
+    build_log::LineKind,
     gui::theme::{
-        BREEZE_ACCENT, BREEZE_BG_CARD, BREEZE_BORDER, BREEZE_DANGER, BREEZE_TEXT, BREEZE_TEXT_DIM,
-        BREEZE_TEXT_MUTED, BREEZE_WARNING,
+        BREEZE_ACCENT, BREEZE_BG_CARD, BREEZE_BORDER, BREEZE_DANGER, BREEZE_PURPLE, BREEZE_SUCCESS,
+        BREEZE_TEAL, BREEZE_TEXT, BREEZE_TEXT_DIM, BREEZE_TEXT_MUTED, BREEZE_WARNING,
+        BREEZE_YELLOW,
     },
+    highlight::{Token, compact_store_paths, highlight},
     logs::{LogEntry, Priority},
 };
 
@@ -31,7 +38,11 @@ pub const ROW_HEIGHT: f32 = 20.0;
 pub const OVERSCAN: usize = 8;
 
 /// Width of the time, level and source columns plus spacing and padding.
-const FIXED_COLUMNS_WIDTH: f32 = 64.0 + 58.0 + 70.0 + 3.0 * 10.0 + 2.0 * 8.0 + 2.0 * 4.0 + 16.0;
+const FIXED_COLUMNS_WIDTH: f32 =
+    64.0 + 58.0 + 70.0 + ICON_WIDTH + 4.0 * 10.0 + 2.0 * 8.0 + 2.0 * 4.0 + 16.0;
+
+/// Width of the column with the nom-style status icon.
+const ICON_WIDTH: f32 = 14.0;
 
 /// The advance of one 12px monospace glyph, slightly rounded up.
 const MONO_CHAR_WIDTH: f32 = 7.4;
@@ -42,8 +53,8 @@ pub struct Row<'a> {
     pub id: u64,
     pub entry: &'a LogEntry,
     pub text: Cow<'a, str>,
-    /// Draw the row dimmed (for example noise shown on request).
-    pub dim: bool,
+    /// What the line is, for its icon and colors.
+    pub kind: &'a LineKind,
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +73,8 @@ pub struct LogList {
     /// When on, a click extends the selection like Shift+click does. This
     /// is for when Shift is awkward or its key events do not reach the app.
     pub range_mode: bool,
+    /// Color the parts of each line like `nh os switch` does.
+    pub colors: bool,
     scroll_offset: f32,
     viewport_height: f32,
     viewport_width: f32,
@@ -76,6 +89,7 @@ impl Default for LogList {
             auto_scroll: true,
             modifiers: Modifiers::default(),
             range_mode: false,
+            colors: true,
             scroll_offset: 0.0,
             viewport_height: 800.0,
             viewport_width: 900.0,
@@ -196,7 +210,12 @@ impl LogList {
         }
         let max_chars = self.message_chars();
         for (position, row) in rows.into_iter().enumerate().skip(start).take(end - start) {
-            list = list.push(log_row(row, selected.contains(&position), max_chars));
+            list = list.push(log_row(
+                row,
+                selected.contains(&position),
+                max_chars,
+                self.colors,
+            ));
         }
         if end < total {
             list = list.push(Space::new(
@@ -228,22 +247,62 @@ impl LogList {
     }
 }
 
-fn log_row(row: Row<'_>, selected: bool, max_chars: usize) -> Element<'_, LogListMessage> {
+fn log_row(
+    row: Row<'_>,
+    selected: bool,
+    max_chars: usize,
+    colors: bool,
+) -> Element<'_, LogListMessage> {
     let entry = row.entry;
     let message = fit_line(row.text, max_chars);
-    let message_color = if row.dim {
-        BREEZE_TEXT_MUTED
-    } else if entry.priority <= Priority::Error {
-        BREEZE_DANGER
-    } else if entry.priority == Priority::Warning {
-        BREEZE_WARNING
-    } else {
-        BREEZE_TEXT
-    };
     let source = if entry.identifier.is_empty() || entry.identifier == "comin" {
         String::new()
     } else {
         entry.identifier.clone()
+    };
+    let (icon, icon_color) = if colors {
+        kind_icon(row.kind, &message)
+    } else {
+        ("", BREEZE_TEXT_MUTED)
+    };
+
+    let body: Element<'_, LogListMessage> = if colors {
+        let spans: Vec<_> = highlight(&message, row.kind, entry.from_comin)
+            .into_iter()
+            .map(|(range, token)| {
+                let (color, bold) = token_style(token);
+                let font = if bold {
+                    Font {
+                        weight: font::Weight::Bold,
+                        ..Font::MONOSPACE
+                    }
+                } else {
+                    Font::MONOSPACE
+                };
+                span(message[range].to_string()).color(color).font(font)
+            })
+            .collect();
+        rich_text(spans)
+            .size(12)
+            .font(Font::MONOSPACE)
+            .wrapping(Wrapping::None)
+            .into()
+    } else {
+        let color = if row.kind.is_noise() {
+            BREEZE_TEXT_MUTED
+        } else if entry.priority <= Priority::Error {
+            BREEZE_DANGER
+        } else if entry.priority == Priority::Warning {
+            BREEZE_WARNING
+        } else {
+            BREEZE_TEXT
+        };
+        text(message)
+            .size(12)
+            .font(Font::MONOSPACE)
+            .color(color)
+            .wrapping(Wrapping::None)
+            .into()
     };
 
     let content = row![
@@ -261,11 +320,11 @@ fn log_row(row: Row<'_>, selected: bool, max_chars: usize) -> Element<'_, LogLis
             .width(Length::Fixed(70.0))
             .color(BREEZE_TEXT_MUTED)
             .wrapping(Wrapping::None),
-        text(message)
+        text(icon)
             .size(12)
-            .font(Font::MONOSPACE)
-            .color(message_color)
-            .wrapping(Wrapping::None),
+            .width(Length::Fixed(ICON_WIDTH))
+            .color(icon_color),
+        body,
     ]
     .spacing(10)
     .align_y(Alignment::Center);
@@ -288,13 +347,61 @@ fn log_row(row: Row<'_>, selected: bool, max_chars: usize) -> Element<'_, LogLis
     .into()
 }
 
+/// The color of a highlighted part, and whether it is bold.
+fn token_style(token: Token) -> (Color, bool) {
+    match token {
+        Token::Plain => (BREEZE_TEXT_DIM, false),
+        Token::Header => (BREEZE_TEXT, true),
+        Token::Build => (BREEZE_YELLOW, true),
+        Token::Fetch => (BREEZE_ACCENT, true),
+        Token::Component => (BREEZE_TEAL, true),
+        Token::StoreHash => (BREEZE_TEXT_MUTED, false),
+        Token::StoreName => (BREEZE_TEXT, true),
+        Token::DrvPrefix => (BREEZE_PURPLE, false),
+        Token::Url => (BREEZE_ACCENT, false),
+        Token::Hash | Token::Number => (BREEZE_YELLOW, false),
+        Token::Success => (BREEZE_SUCCESS, true),
+        Token::Error => (BREEZE_DANGER, false),
+        Token::Warning => (BREEZE_WARNING, true),
+        Token::Muted => (BREEZE_TEXT_MUTED, false),
+    }
+}
+
+/// The nom-style status icon of a line.
+fn kind_icon(kind: &LineKind, message: &str) -> (&'static str, Color) {
+    match kind {
+        LineKind::Building(_) => ("▸", BREEZE_YELLOW),
+        LineKind::Fetching { .. } => ("↓", BREEZE_ACCENT),
+        LineKind::Plan => ("≡", BREEZE_TEXT_DIM),
+        LineKind::BuildOutput(_) => ("│", BREEZE_PURPLE),
+        LineKind::Command => ("$", BREEZE_TEAL),
+        LineKind::Activation => ("⚙", BREEZE_TEAL),
+        LineKind::Error => ("✗", BREEZE_DANGER),
+        LineKind::Warning => ("!", BREEZE_WARNING),
+        LineKind::Step
+            if message.contains("successfully")
+                || message.contains("succeeded")
+                || message.ends_with("deployment ended") =>
+        {
+            ("✓", BREEZE_SUCCESS)
+        }
+        LineKind::Step => ("•", BREEZE_TEXT_MUTED),
+        LineKind::Noise | LineKind::Other => ("", BREEZE_TEXT_MUTED),
+    }
+}
+
 /// Puts `text` on one line and cuts it to `max_chars`, ending with `…`.
+/// Store hashes are shortened first when that is enough to show more of the
+/// line, since the name after the hash is the useful part.
 fn fit_line(text: Cow<'_, str>, max_chars: usize) -> Cow<'_, str> {
-    let text = if text.contains(['\n', '\r']) {
+    let mut text = if text.contains(['\n', '\r']) {
         Cow::Owned(text.replace(['\n', '\r'], " ⏎ "))
     } else {
         text
     };
+    if text.chars().nth(max_chars).is_some() && text.contains("/nix/store/") {
+        text = Cow::Owned(compact_store_paths(&text));
+    }
     match text.char_indices().nth(max_chars.saturating_sub(1)) {
         Some((cut, _)) if text[cut..].chars().nth(1).is_some() => {
             Cow::Owned(format!("{}…", &text[..cut]))
@@ -427,6 +534,13 @@ mod tests {
         assert_eq!(fit_line(Cow::Borrowed("0123456789abc"), 10), "012345678…");
         assert_eq!(fit_line(Cow::Borrowed("a\nb"), 10), "a ⏎ b");
         assert_eq!(fit_line(Cow::Borrowed("ééééééé"), 3), "éé…");
+        assert_eq!(
+            fit_line(
+                Cow::Borrowed("  /nix/store/1hcxlkvd7hmp5r0kvfz6mn12zpm211p2-home-manager.drv"),
+                40
+            ),
+            "  /nix/store/1hcxlkv…-home-manager.drv"
+        );
     }
 
     #[test]

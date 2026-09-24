@@ -29,6 +29,7 @@ pub const BREEZE_SUCCESS_HOVER: Color = Color::from_rgb(0.180, 0.800, 0.443); //
 pub const BREEZE_WARNING: Color = Color::from_rgb(0.965, 0.455, 0.000); // #f67400 (Neutral / Warning)
 pub const BREEZE_DANGER: Color = Color::from_rgb(0.855, 0.267, 0.325); // #da4453 (Negative / Error)
 pub const BREEZE_TEAL: Color = Color::from_rgb(0.102, 0.737, 0.612); // #1abc9c (Teal / Boot)
+pub const BREEZE_YELLOW: Color = Color::from_rgb(0.992, 0.737, 0.294); // #fdbc4b (Breeze yellow)
 pub const BREEZE_PURPLE: Color = Color::from_rgb(0.608, 0.349, 0.714); // #9b59b6 (Purple / Switch)
 
 // Button styles in Breeze aesthetic

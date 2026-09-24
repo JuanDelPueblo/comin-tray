@@ -86,6 +86,7 @@ pub enum LogMessage {
     Level(LevelFilter),
     HideNoise(bool),
     RangeMode(bool),
+    Colors(bool),
     CopySelected,
     CopyAll,
     SelectAll,
@@ -165,6 +166,10 @@ impl LogView {
             LogMessage::HideNoise(hide) => {
                 self.hide_noise = hide;
                 self.refilter()
+            }
+            LogMessage::Colors(enabled) => {
+                self.list.colors = enabled;
+                Task::none()
             }
             LogMessage::RangeMode(enabled) => {
                 self.list.range_mode = enabled;
@@ -250,7 +255,7 @@ impl LogView {
                 id: line.id,
                 entry: &line.entry,
                 text: display_message(&line.entry),
-                dim: line.kind.is_noise(),
+                kind: &line.kind,
             })
             .collect();
         let shown = rows.len();
@@ -267,6 +272,10 @@ impl LogView {
                 .padding([5, 10]),
             checkbox("Hide noise", self.hide_noise)
                 .on_toggle(LogMessage::HideNoise)
+                .size(16)
+                .text_size(13),
+            checkbox("Colors", self.list.colors)
+                .on_toggle(LogMessage::Colors)
                 .size(16)
                 .text_size(13),
             checkbox("Follow", self.list.auto_scroll)

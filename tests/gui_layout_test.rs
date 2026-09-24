@@ -55,6 +55,8 @@ fn test_log_view_does_not_panic() {
     let _ = log_view.update(LogMessage::HideNoise(false));
     let _ = log_view.update(LogMessage::Search("building".into()));
     let _ = log_view.view();
+    let _ = log_view.update(LogMessage::Colors(false));
+    let _ = log_view.view();
 }
 
 #[test]

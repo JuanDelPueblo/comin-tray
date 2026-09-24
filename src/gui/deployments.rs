@@ -107,6 +107,7 @@ pub enum DeploymentsMessage {
     Stage(Option<Stage>),
     HideNoise(bool),
     RangeMode(bool),
+    Colors(bool),
     ToggleDerivations,
     List(LogListMessage),
     CopyValue(String),
@@ -173,6 +174,10 @@ impl DeploymentsView {
             DeploymentsMessage::HideNoise(hide) => {
                 self.hide_noise = hide;
                 self.list.clear_selection();
+                Task::none()
+            }
+            DeploymentsMessage::Colors(enabled) => {
+                self.list.colors = enabled;
                 Task::none()
             }
             DeploymentsMessage::RangeMode(enabled) => {
@@ -550,6 +555,10 @@ impl DeploymentsView {
                 .on_toggle(DeploymentsMessage::HideNoise)
                 .size(16)
                 .text_size(13),
+            checkbox("Colors", self.list.colors)
+                .on_toggle(DeploymentsMessage::Colors)
+                .size(16)
+                .text_size(13),
             checkbox("Select range", self.list.range_mode)
                 .on_toggle(DeploymentsMessage::RangeMode)
                 .size(16)
@@ -600,7 +609,7 @@ impl DeploymentsView {
                             id: index as u64,
                             entry,
                             text: display_message(entry),
-                            dim: log.kinds[index].is_noise(),
+                            kind: &log.kinds[index],
                         }
                     })
                     .collect();

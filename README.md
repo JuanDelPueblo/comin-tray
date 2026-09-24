@@ -24,6 +24,7 @@ It combines the concise live-state model of `comin watch` with the structured li
   - Retry deployment (shown when an existing deployment can be retried)
   - Accept confirmation (shown when a build or deployment confirmer is waiting)
 - **Readable, copyable logs** (Logs page and each deployment's log):
+  - Colored like `nh os switch`: an icon per event (`▸` building, `↓` fetching, `│` builder output, `$` command, `✓` success, `✗` error). Store paths show a dimmed hash and a bold name. Caches and URLs, counts and sizes, and commit ids and UUIDs each get their own color. Turn it off with **Colors**; copies are always plain text.
   - Times in local time. Comin's `level=… msg=…` lines are unwrapped. nix's colored output and git's progress output are decoded.
   - **Hide noise** (on by default) hides git plumbing (`remote: …`, `[5K blob data]`, `fatal: Refusing to point HEAD…`), Comin's store bookkeeping and `structuredAttrs is enabled` chatter. Long `nix …` commands are shortened for display; copies keep the full text.
   - Click a line to select it. Shift+click selects a range, or turn on **Select range** to extend the selection with plain clicks. Ctrl+A selects all. Copy with Ctrl+C or **Copy selected**. **Copy all shown** and **Save to file** (saved to your Downloads folder) are there too. Long lines end with `…` on screen; copies keep the full text.
