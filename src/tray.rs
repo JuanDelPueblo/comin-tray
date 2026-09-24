@@ -6,7 +6,27 @@ use crate::model::TrayState;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GuiPage {
     Overview,
+    Deployments,
     Logs,
+}
+
+impl GuiPage {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Overview => "overview",
+            Self::Deployments => "deployments",
+            Self::Logs => "logs",
+        }
+    }
+
+    pub fn parse(name: &str) -> Option<Self> {
+        match name {
+            "overview" => Some(Self::Overview),
+            "deployments" => Some(Self::Deployments),
+            "logs" => Some(Self::Logs),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -46,6 +66,18 @@ impl Tray for CominTray {
             description: self.state.tooltip(),
             ..Default::default()
         }
+    }
+
+    fn watcher_online(&self) {
+        eprintln!("comin-tray: StatusNotifierWatcher is online; the icon is registered");
+    }
+
+    fn watcher_offline(&self, reason: ksni::OfflineReason) -> bool {
+        // Keep running: Plasma starts the watcher after autostart entries at
+        // login and restarts it with plasmashell. ksni registers the icon
+        // again as soon as the watcher comes back.
+        eprintln!("comin-tray: StatusNotifierWatcher is offline ({reason:?}); waiting for it");
+        true
     }
 
     fn activate(&mut self, _x: i32, _y: i32) {
@@ -121,6 +153,11 @@ impl Tray for CominTray {
         }
 
         items.push(ksni::MenuItem::Separator);
+        items.push(action_item(
+            "Deployments…",
+            "view-list-details",
+            Action::OpenGui(GuiPage::Deployments),
+        ));
         items.push(action_item(
             "View live logs",
             "utilities-terminal",

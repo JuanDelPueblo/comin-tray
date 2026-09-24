@@ -4,7 +4,14 @@ use iced::{
     widget::{Row, button, column, container, text},
 };
 
-use crate::gui::theme::{BREEZE_BORDER_SUBTLE, BREEZE_TEXT, card_style, secondary_button_style};
+use crate::{
+    gui::theme::{
+        BREEZE_ACCENT, BREEZE_BG_HEADER, BREEZE_BG_HOVER, BREEZE_BORDER_SUBTLE, BREEZE_PURPLE,
+        BREEZE_TEAL, BREEZE_TEXT, BREEZE_TEXT_DIM, BREEZE_WARNING, card_style,
+        secondary_button_style,
+    },
+    model::{Deployment, Store},
+};
 
 pub fn badge<'a, Message: 'a>(
     label: impl Into<String>,
@@ -177,4 +184,95 @@ pub fn banner<'a, Message: Clone + 'a>(
             ..Default::default()
         })
         .into()
+}
+
+/// A segment of the navigation bar or of a segmented filter.
+pub fn tab_button<'a, Message: Clone + 'a>(
+    label: impl Into<String>,
+    active: bool,
+    on_press: Message,
+) -> Element<'a, Message> {
+    button(text(label.into()).size(13))
+        .on_press(on_press)
+        .style(move |_theme: &Theme, status: button::Status| {
+            let (background, text_color) = if active {
+                (Some(Background::Color(BREEZE_ACCENT)), Color::WHITE)
+            } else {
+                let background = match status {
+                    button::Status::Hovered => Some(Background::Color(BREEZE_BG_HOVER)),
+                    _ => None,
+                };
+                (background, BREEZE_TEXT_DIM)
+            };
+            button::Style {
+                background,
+                text_color,
+                border: Border {
+                    radius: Radius::from(4.0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        })
+        .padding([6, 16])
+        .into()
+}
+
+/// Wraps segments from [`tab_button`] in a Breeze-style segmented frame.
+pub fn segmented<'a, Message: 'a>(segments: Vec<Element<'a, Message>>) -> Element<'a, Message> {
+    container(Row::with_children(segments).spacing(2))
+        .padding(3)
+        .style(|_theme: &Theme| container::Style {
+            background: Some(Background::Color(BREEZE_BG_HEADER)),
+            border: Border {
+                color: BREEZE_BORDER_SUBTLE,
+                width: 1.0,
+                radius: Radius::from(6.0),
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
+/// A compact secondary button, used for "Copy" and toolbar actions.
+pub fn small_button<'a, Message: Clone + 'a>(
+    label: impl Into<String>,
+    on_press: Option<Message>,
+) -> Element<'a, Message> {
+    button(text(label.into()).size(12))
+        .on_press_maybe(on_press)
+        .style(secondary_button_style)
+        .padding([4, 10])
+        .into()
+}
+
+/// The `switched`, `booted`, `boot entry` and `successful` badges of a
+/// deployment.
+pub fn retention_badges<'a, Message: 'a>(
+    deployment: &Deployment,
+    store: &Store,
+) -> Element<'a, Message> {
+    let tinted = |label: &'static str, color: Color| {
+        badge(
+            label,
+            Color { a: 0.16, ..color },
+            Color { a: 0.45, ..color },
+            color,
+        )
+    };
+
+    let mut roles = Row::new().spacing(6).align_y(Alignment::Center);
+    if deployment.is_switched(store) {
+        roles = roles.push(tinted("switched", BREEZE_ACCENT));
+    }
+    if deployment.is_booted(store) {
+        roles = roles.push(tinted("booted", BREEZE_TEAL));
+    }
+    if deployment.is_boot_entry(store) {
+        roles = roles.push(tinted("boot entry", BREEZE_PURPLE));
+    }
+    if deployment.is_successful(store) {
+        roles = roles.push(tinted("successful", BREEZE_WARNING));
+    }
+    roles.into()
 }

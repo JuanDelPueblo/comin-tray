@@ -1,6 +1,8 @@
 use serde::Deserialize;
 
-use crate::format::{commit_title, format_relative_time_now, short_commit};
+use time::{Duration, OffsetDateTime};
+
+use crate::format::{commit_title, format_relative_time_now, parse_rfc3339, short_commit};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Phase {
@@ -262,6 +264,84 @@ impl CominState {
             .or(self.deployer.deployment.as_ref())
     }
 
+    /// Deployments, newest first.
+    pub fn deployments_sorted(&self) -> Vec<&Deployment> {
+        let mut deployments: Vec<&Deployment> = self.store.deployments.iter().collect();
+        deployments.sort_by(|a, b| b.time_key().cmp(a.time_key()));
+        deployments
+    }
+
+    /// Everything the Deployments page lists, newest first: deployments, plus
+    /// generations that never became one (still in progress, failed, or
+    /// skipped because their output was already deployed). Items that are in
+    /// progress come first.
+    pub fn history(&self) -> Vec<HistoryItem<'_>> {
+        let mut items: Vec<HistoryItem<'_>> = Vec::new();
+        let deployed_generation = |uuid: Option<&str>| {
+            uuid.is_some_and(|uuid| {
+                self.store
+                    .deployments
+                    .iter()
+                    .chain(self.deployer.deployment.as_ref())
+                    .any(|deployment| {
+                        deployment
+                            .generation
+                            .as_ref()
+                            .and_then(|g| g.uuid.as_deref())
+                            == Some(uuid)
+                    })
+            })
+        };
+
+        for deployment in &self.store.deployments {
+            items.push(HistoryItem::for_deployment(deployment, false));
+        }
+        if let Some(deployment) = &self.deployer.deployment
+            && !self
+                .store
+                .deployments
+                .iter()
+                .any(|stored| stored.uuid == deployment.uuid)
+        {
+            items.push(HistoryItem::for_deployment(
+                deployment,
+                self.deployer.is_deploying.unwrap_or(false),
+            ));
+        } else if self.deployer.is_deploying.unwrap_or(false)
+            && let Some(deployment) = &self.deployer.deployment
+            && let Some(item) = items.iter_mut().find(|item| item.key == deployment.uuid)
+        {
+            item.active = true;
+        }
+
+        let builder_active = self.builder.is_evaluating.unwrap_or(false)
+            || self.builder.is_building.unwrap_or(false);
+        if let Some(generation) = &self.builder.generation
+            && !deployed_generation(generation.uuid.as_deref())
+        {
+            items.push(HistoryItem::for_generation(generation, builder_active));
+        }
+        for generation in &self.store.generations {
+            let is_builder_generation = generation.uuid.is_some()
+                && self
+                    .builder
+                    .generation
+                    .as_ref()
+                    .and_then(|g| g.uuid.as_deref())
+                    == generation.uuid.as_deref();
+            if !is_builder_generation && !deployed_generation(generation.uuid.as_deref()) {
+                items.push(HistoryItem::for_generation(generation, false));
+            }
+        }
+
+        items.sort_by(|a, b| {
+            b.active
+                .cmp(&a.active)
+                .then_with(|| b.time_key().cmp(a.time_key()))
+        });
+        items
+    }
+
     pub fn can_switch_latest(&self) -> bool {
         if self.deployer.is_deploying.unwrap_or(false) {
             return false;
@@ -454,6 +534,15 @@ pub struct Deployment {
 }
 
 impl Deployment {
+    /// The timestamp deployments are ordered by.
+    pub fn time_key(&self) -> &str {
+        self.ended_at
+            .as_deref()
+            .or(self.created_at.as_deref())
+            .or(self.started_at.as_deref())
+            .unwrap_or("")
+    }
+
     pub fn is_switched(&self, store: &Store) -> bool {
         store.deployment_switched.as_deref() == Some(&self.uuid)
     }
@@ -508,6 +597,144 @@ pub struct Generation {
     pub build_started_at: Option<String>,
     pub build_ended_at: Option<String>,
     pub build_err: Option<String>,
+}
+
+/// One row of the Deployments page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HistoryItem<'a> {
+    /// The deployment uuid, or the generation uuid for a generation that
+    /// was not deployed (`"current"` when Comin reports none).
+    pub key: String,
+    pub deployment: Option<&'a Deployment>,
+    pub generation: Option<&'a Generation>,
+    /// Comin is still evaluating, building or deploying this item.
+    pub active: bool,
+}
+
+impl<'a> HistoryItem<'a> {
+    fn for_deployment(deployment: &'a Deployment, active: bool) -> Self {
+        Self {
+            key: deployment.uuid.clone(),
+            deployment: Some(deployment),
+            generation: deployment.generation.as_ref(),
+            active,
+        }
+    }
+
+    fn for_generation(generation: &'a Generation, active: bool) -> Self {
+        Self {
+            key: generation
+                .uuid
+                .clone()
+                .filter(|uuid| !uuid.is_empty())
+                .unwrap_or_else(|| "current".into()),
+            deployment: None,
+            generation: Some(generation),
+            active,
+        }
+    }
+
+    /// Whether `uuid` names this item's deployment or generation.
+    pub fn matches(&self, uuid: &str) -> bool {
+        self.key == uuid || self.generation.and_then(|g| g.uuid.as_deref()) == Some(uuid)
+    }
+
+    pub fn time_key(&self) -> &str {
+        if let Some(deployment) = self.deployment {
+            return deployment.time_key();
+        }
+        self.generation
+            .and_then(|g| {
+                g.build_ended_at
+                    .as_deref()
+                    .or(g.eval_ended_at.as_deref())
+                    .or(g.build_started_at.as_deref())
+                    .or(g.eval_started_at.as_deref())
+            })
+            .unwrap_or("")
+    }
+
+    /// A short status: `done`, `failed`, `evaluating`, `not deployed`, …
+    pub fn status(&self) -> &str {
+        let generation = self.generation;
+        let eval_failed = generation.is_some_and(|g| {
+            g.eval_status.as_deref() == Some("failed")
+                || g.eval_err.as_deref().is_some_and(|e| !e.is_empty())
+        });
+        let build_failed = generation.is_some_and(|g| {
+            g.build_status.as_deref() == Some("failed")
+                || g.build_err.as_deref().is_some_and(|e| !e.is_empty())
+        });
+
+        if let Some(deployment) = self.deployment {
+            if self.active {
+                return "deploying";
+            }
+            if deployment
+                .error_msg
+                .as_deref()
+                .is_some_and(|e| !e.is_empty())
+            {
+                return "failed";
+            }
+            return deployment.status.as_deref().unwrap_or("unknown");
+        }
+        if eval_failed || build_failed {
+            return "failed";
+        }
+        if self.active {
+            return match generation.and_then(|g| g.build_started_at.as_deref()) {
+                Some(_) => "building",
+                None => "evaluating",
+            };
+        }
+        "not deployed"
+    }
+
+    pub fn operation(&self) -> Option<&str> {
+        self.deployment
+            .and_then(|d| d.operation.as_deref().or(d.operation_submitted.as_deref()))
+    }
+
+    pub fn commit_id(&self) -> Option<&str> {
+        self.generation
+            .and_then(|g| g.selected_commit_id.as_deref())
+    }
+
+    pub fn commit_msg(&self) -> Option<&str> {
+        self.generation
+            .and_then(|g| g.selected_commit_msg.as_deref())
+    }
+
+    /// The journal window that holds this item's logs: from the start of the
+    /// evaluation to the end of the deployment, or open-ended while active.
+    pub fn log_window(&self) -> Option<(OffsetDateTime, Option<OffsetDateTime>)> {
+        let generation = self.generation;
+        let deployment = self.deployment;
+        let start = generation
+            .and_then(|g| {
+                g.eval_started_at
+                    .as_deref()
+                    .or(g.build_started_at.as_deref())
+            })
+            .or_else(|| {
+                deployment.and_then(|d| d.started_at.as_deref().or(d.created_at.as_deref()))
+            })
+            .and_then(parse_rfc3339)?;
+        let since = start - Duration::seconds(2);
+
+        if self.active {
+            return Some((since, None));
+        }
+        let end = deployment
+            .and_then(|d| d.ended_at.as_deref())
+            .or_else(|| {
+                generation.and_then(|g| g.build_ended_at.as_deref().or(g.eval_ended_at.as_deref()))
+            })
+            .and_then(parse_rfc3339)
+            .unwrap_or(start);
+        Some((since, Some(end + Duration::seconds(3))))
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
